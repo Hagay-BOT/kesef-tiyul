@@ -143,6 +143,13 @@ h2{font-size:22px;margin:4px 0 12px}
 .it .a{font-weight:600}
 .it.add .a{color:var(--cash)}
 .it.fix .a{color:var(--warn)}
+.it.settle .a{color:var(--card)}
+.it .t small.share{display:block;font-size:12px}
+.chip.split.on{background:var(--accent);color:var(--on-accent)}
+.seg.dim{opacity:.4}
+.opts{display:flex;flex-direction:column;gap:6px}
+.opts button{min-height:46px;padding:0 14px;border-radius:12px;background:var(--surface2);text-align:right;font-size:15px}
+.opts button.on{background:var(--accent);color:var(--on-accent);font-weight:600}
 
 /* sheet (נפתח מלמעלה, כדי שהמקלדת של האייפון לא תכסה את הכפתורים) + toast */
 .sheet{position:fixed;inset:0;background:rgba(20,12,8,.42);display:flex;align-items:flex-start;justify-content:center;z-index:20;opacity:0;pointer-events:none;transition:opacity .18s}
@@ -197,7 +204,7 @@ details.note ol{padding-inline-start:18px;margin-top:6px;display:flex;flex-direc
         <label class="past" id="pickBtn" data-d="pick"><span id="pickLbl">📅</span><input type="date" id="dateIn" aria-label="תאריך אחר"></label>
       </div>
     </div>
-    <div class="quick"><button class="chip" id="noteBtn">+ הערה</button><span id="recent"></span></div>
+    <div class="quick"><button class="chip" id="noteBtn">+ הערה</button><button class="chip split" id="splitBtn">👥 חלוקה</button><span id="recent"></span></div>
     <div id="noteRow" hidden><input id="noteIn" class="inp" maxlength="60" placeholder="למשל: פיצה בברוקלין" enterkeyhint="done"></div>
     <p class="hint" id="hint" hidden></p>
     <div class="cats" id="cats"></div>
@@ -227,9 +234,16 @@ details.note ol{padding-inline-start:18px;margin-top:6px;display:flex;flex-direc
         <div class="split">
           <div><span><i class="dot" style="background:var(--cash)"></i>מזומן</span><b class="num" id="tCash">$0</b></div>
           <div><span><i class="dot" style="background:var(--card)"></i>אשראי</span><b class="num" id="tCard">$0</b></div>
+          <div id="tBuddyRow" hidden><span><i class="dot" style="background:var(--muted)"></i><span id="tBuddyLbl"></span></span><b class="num" id="tBuddy">$0</b></div>
         </div>
       </div>
     </div>
+    <button class="card" id="buddyCard" style="display:block;width:100%;text-align:right" hidden>
+      <div class="lbl">👥 החשבון מול <span id="bName"></span></div>
+      <div class="mid"><span id="bTxt"></span> <span class="num" id="bBal"></span></div>
+      <div class="sub" id="bSub"></div>
+      <div class="link">התחשבנות ופירוט ›</div>
+    </button>
     <div class="card"><div class="lbl">לפי קטגוריה</div><div id="catBars"></div></div>
     <div class="btns">
       <button class="btn" id="waBtn">סיכום לוואטסאפ</button>
@@ -315,12 +329,35 @@ function parseMoney(v){
 const sum=a=>a.reduce((t,i)=>t+i.c,0);
 const isFix=a=>a.t==='fix';
 
+/* ---------- חלוקה עם חבר ---------- */
+// owed: כמה החבר חייב לי בעקבות ההוצאה (שלילי = אני חייב לו). byMe: האם הכסף יצא ממני
+const SPLITS={
+  me:   {label:'רק שלי',             chip:'חלוקה',       mine:c=>c,                 owed:c=>0,                    byMe:true},
+  half: {label:'חצי-חצי, אני שילמתי', chip:'חצי',         mine:c=>Math.round(c/2),   owed:c=>c-Math.round(c/2),    byMe:true},
+  halfB:{label:'חצי-חצי, {B} שילם',   chip:'חצי, {B} שילם',mine:c=>Math.round(c/2),   owed:c=>-Math.round(c/2),     byMe:false},
+  forB: {label:'שילמתי על {B}, כולו שלו',chip:'על {B}',    mine:c=>0,                 owed:c=>c,                    byMe:true},
+  byB:  {label:'{B} שילם עליי',        chip:'{B} שילם',    mine:c=>c,                 owed:c=>-c,                   byMe:false},
+};
+const BUDDY=()=>S.buddy;
+const tB=s=>s.replace(/\{B\}/g,S.buddy||'החבר');
+const spOf=i=>SPLITS[i.sp]||SPLITS.me;
+const mine=i=>spOf(i).mine(i.c);
+const byMe=i=>spOf(i).byMe;
+const mySum=a=>a.reduce((t,i)=>t+mine(i),0);
+const buddyBal=()=>S.items.reduce((t,i)=>t+spOf(i).owed(i.c),0)+S.settles.reduce((t,x)=>t+(x.dir==='in'?-x.c:x.c),0);
+
 /* ---------- state ---------- */
 const DRE=/^\d{4}-\d\d-\d\d$/,IDRE=/^[a-z0-9]{4,24}$/i;
-function fresh(){return {v:1,startCash:null,endDate:'2026-12-13',adds:[],items:[],pay:'cash',lastBackup:null}}
+function fresh(){return {v:1,startCash:null,endDate:'2026-12-13',adds:[],items:[],settles:[],pay:'cash',split:'me',buddy:'סטיב',lastBackup:null}}
 function normItem(x){
   if(!x||!IDRE.test(x.id)||!Number.isInteger(x.c)||x.c<=0||!DRE.test(x.d))return null;
-  return {id:x.id,c:x.c,k:CAT[x.k]?x.k:'other',p:x.p==='card'?'card':'cash',d:x.d,ts:Number.isFinite(x.ts)?x.ts:0,n:typeof x.n==='string'?x.n.slice(0,60):''};
+  const it={id:x.id,c:x.c,k:CAT[x.k]?x.k:'other',p:x.p==='card'?'card':'cash',d:x.d,ts:Number.isFinite(x.ts)?x.ts:0,n:typeof x.n==='string'?x.n.slice(0,60):''};
+  if(SPLITS[x.sp]&&x.sp!=='me')it.sp=x.sp;
+  return it;
+}
+function normSettle(x){
+  if(!x||!IDRE.test(x.id)||!Number.isInteger(x.c)||x.c<=0||!DRE.test(x.d))return null;
+  return {id:x.id,c:x.c,d:x.d,ts:Number.isFinite(x.ts)?x.ts:0,dir:x.dir==='out'?'out':'in',p:x.p==='card'?'card':'cash'};
 }
 function normAdd(x){
   if(!x||!IDRE.test(x.id)||!Number.isInteger(x.c)||!x.c||!DRE.test(x.d))return null;
@@ -329,11 +366,13 @@ function normAdd(x){
 }
 function normState(d){
   const items=(Array.isArray(d.items)?d.items:[]).map(normItem),adds=(Array.isArray(d.adds)?d.adds:[]).map(normAdd);
+  const settles=(Array.isArray(d.settles)?d.settles:[]).map(normSettle);
   return {
     startCash:Number.isInteger(d.startCash)&&d.startCash>=0?d.startCash:null,
     endDate:DRE.test(d.endDate)?d.endDate:'2026-12-13',
-    items:items.filter(Boolean),adds:adds.filter(Boolean),
-    dropped:items.filter(x=>!x).length+adds.filter(x=>!x).length,
+    buddy:typeof d.buddy==='string'?d.buddy.slice(0,20):'סטיב',
+    items:items.filter(Boolean),adds:adds.filter(Boolean),settles:settles.filter(Boolean),
+    dropped:[...items,...adds,...settles].filter(x=>!x).length,
   };
 }
 function load(){
@@ -342,7 +381,7 @@ function load(){
   if(!raw)return fresh();
   try{
     const s=JSON.parse(raw);
-    if(s&&s.v===1){const n=normState(s);delete n.dropped;return Object.assign(fresh(),{pay:s.pay==='card'?'card':'cash',lastBackup:Number.isFinite(s.lastBackup)?s.lastBackup:null},n)}
+    if(s&&s.v===1){const n=normState(s);delete n.dropped;return Object.assign(fresh(),{pay:s.pay==='card'?'card':'cash',split:SPLITS[s.split]?s.split:'me',lastBackup:Number.isFinite(s.lastBackup)?s.lastBackup:null},n)}
   }catch(e){}
   // לא דורסים נתונים שלא הצלחנו לקרוא: שומרים עותק בצד
   try{localStorage.setItem(KEY+'.corrupt',raw)}catch(e){}
@@ -352,7 +391,9 @@ let S=load();
 function save(){
   try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){toast('השמירה נכשלה. כדאי לגבות עכשיו.')}
 }
-const cashLeft=()=>(S.startCash||0)+sum(S.adds)-sum(S.items.filter(i=>i.p==='cash'));
+// מזומן יורד רק כשהכסף יצא ממני; החזר מזומן מהחבר מוסיף, החזר שלי לחבר מוריד
+const cashLeft=()=>(S.startCash||0)+sum(S.adds)-sum(S.items.filter(i=>i.p==='cash'&&byMe(i)))
+  +S.settles.filter(x=>x.p==='cash').reduce((t,x)=>t+(x.dir==='in'?x.c:-x.c),0);
 const cashTotal=()=>(S.startCash||0)+sum(S.adds.filter(a=>!isFix(a)));
 const unrecorded=()=>-sum(S.adds.filter(isFix));
 const daysLeft=()=>Math.max(1,diff(today(),S.endDate)+1);
@@ -391,11 +432,31 @@ function renderDate(){
   document.querySelectorAll('#dateSeg [data-d]').forEach(b=>b.classList.toggle('on',b.dataset.d===dateSel));
   $('#pickLbl').textContent=dateSel==='pick'&&customDate?dm(customDate):'📅';
   $('#dateIn').max=today();
-  const h=$('#hint');
-  if(dateSel!=='today'){h.hidden=false;h.textContent='שים לב: נרשם ל'+dayName(selDate())}
-  else if(lateNight()){h.hidden=false;h.textContent='אחרי חצות: עדיין נרשם ל-'+dm(today())}
-  else h.hidden=true;
+  renderHint();
 }
+// שורת אזהרה אחת: תאריך שאינו היום, אחרי חצות, וחלוקה פעילה
+function renderHint(){
+  const parts=[];
+  if(dateSel!=='today')parts.push('נרשם ל'+dayName(selDate())+'.');
+  else if(lateNight())parts.push('אחרי חצות: עדיין נרשם ל-'+dm(today())+'.');
+  const sp=SPLITS[S.split];
+  if(S.buddy&&S.split!=='me')parts.push('👥 '+tB(sp.label)+(sp.byMe?'.':'. לא יורד מהמזומן שלך.'));
+  const h=$('#hint');h.hidden=!parts.length;h.textContent=parts.join(' ');
+}
+function renderSplit(){
+  const b=$('#splitBtn');b.hidden=!S.buddy;
+  const on=!!S.buddy&&S.split!=='me';
+  b.classList.toggle('on',on);
+  b.textContent='👥 '+(on?tB(SPLITS[S.split].chip):'חלוקה');
+  $('#paySeg').classList.toggle('dim',on&&!SPLITS[S.split].byMe);
+  renderHint();
+}
+$('#splitBtn').addEventListener('click',()=>{
+  sheet(`<h3>👥 חלוקה עם ${esc(S.buddy)}</h3>
+    <div class="opts" id="spOpts">${Object.entries(SPLITS).map(([k,v])=>`<button data-sp="${k}" class="${k===S.split?'on':''}">${esc(tB(v.label))}</button>`).join('')}</div>
+    <p class="note" style="margin-top:8px">הבחירה נשארת להוצאות הבאות עד שמשנים. החשבון מול ${esc(S.buddy)} נמצא במסך הסיכום.</p>`);
+  $('#spOpts').onclick=e=>{const o=e.target.closest('button');if(!o)return;S.split=o.dataset.sp;save();closeSheet();renderSplit()};
+});
 $('#dateSeg').addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;
   dateSel=b.dataset.d;renderDate();
@@ -426,14 +487,17 @@ function renderPay(){
 }
 $('#paySeg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;S.pay=b.dataset.p;save();renderPay()});
 
-function addExpense(c,k,p,n,el){
+function addExpense(c,k,p,n,el,sp){
   const it={id:uid(),c,k,p,d:selDate(),ts:Date.now(),n};
+  if(S.buddy&&SPLITS[sp]&&sp!=='me')it.sp=sp;
   S.items.push(it);save();
   lockUntil=Date.now()+800;
   if(el){el.classList.add('hit');setTimeout(()=>el.classList.remove('hit'),350)}
   renderAll();
   const when=it.d!==today()?' ('+dayName(it.d)+')':'';
-  toast(`נשמר: ${fmt(c)} ${CAT[k].n}, ${p==='cash'?'מזומן':'אשראי'}${when}`,()=>{
+  const how=byMe(it)?(p==='cash'?'מזומן':'אשראי'):tB('{B} שילם');
+  const split={half:', חצי',halfB:', חצי',forB:', '+tB('על {B}')}[it.sp]||'';
+  toast(`נשמר: ${fmt(c)} ${CAT[k].n}, ${how}${split}${when}`,()=>{
     S.items=S.items.filter(x=>x.id!==it.id);save();renderAll();toast('בוטל');
   });
 }
@@ -446,7 +510,7 @@ $('#cats').addEventListener('click',e=>{
   }
   const n=$('#noteIn').value.trim();
   amt='';$('#noteIn').value='';$('#noteRow').hidden=true;renderNote();
-  addExpense(c,b.dataset.k,S.pay,n,b);
+  addExpense(c,b.dataset.k,S.pay,n,b,S.split);
   maybeReload();
 });
 
@@ -454,24 +518,25 @@ $('#cats').addEventListener('click',e=>{
 function recentCombos(){
   const m=new Map();
   S.items.slice(-60).forEach(i=>{
-    const key=i.c+'|'+i.k+'|'+i.p;const r=m.get(key)||{c:i.c,k:i.k,p:i.p,n:0,ts:0};
+    const sp=i.sp||'me';
+    const key=i.c+'|'+i.k+'|'+i.p+'|'+sp;const r=m.get(key)||{c:i.c,k:i.k,p:i.p,sp,n:0,ts:0};
     r.n++;r.ts=Math.max(r.ts,i.ts);m.set(key,r);
   });
   return [...m.values()].filter(r=>r.n>=2).sort((a,b)=>b.n-a.n||b.ts-a.ts).slice(0,2);
 }
 function renderRecent(){
-  $('#recent').innerHTML=recentCombos().map(r=>`<button data-c="${r.c}" data-k="${r.k}" data-p="${r.p}">↺ <span class="num">${fmt(r.c)}</span> ${CAT[r.k].n} ${r.p==='cash'?'💵':'💳'}</button>`).join('');
+  $('#recent').innerHTML=recentCombos().map(r=>`<button data-c="${r.c}" data-k="${r.k}" data-p="${r.p}" data-sp="${r.sp}">↺ <span class="num">${fmt(r.c)}</span> ${CAT[r.k].n} ${r.sp!=='me'?'👥':r.p==='cash'?'💵':'💳'}</button>`).join('');
 }
 $('#recent').addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b||amt||Date.now()<lockUntil)return;
-  addExpense(+b.dataset.c,b.dataset.k,b.dataset.p,'',b);
+  addExpense(+b.dataset.c,b.dataset.k,b.dataset.p,'',b,b.dataset.sp);
 });
 
 function renderStats(){
   const left=cashLeft();
   $('#sCash').textContent=fmt(left);
   $('#pCash').classList.toggle('low',S.startCash!==null&&left<cashTotal()*0.15);
-  $('#sToday').textContent=fmt(sum(S.items.filter(i=>i.d===today())));
+  $('#sToday').textContent=fmt(mySum(S.items.filter(i=>i.d===today())));
 }
 
 /* ---------- backup nudge ---------- */
@@ -510,7 +575,8 @@ function renderSum(){
   $('#cFix').hidden=!u;
   $('#cFix').innerHTML=u>0?`מזומן שלא נרשם: <span class="num">${fmt(u)}</span>`:`עודף שנמצא בספירה: <span class="num">${fmt(-u)}</span>`;
 
-  const items=periodItems(),total=sum(items);
+  // כל הסכומים בסיכום הם החלק שלי, לא מה שעבר בקופה
+  const items=periodItems(),total=mySum(items);
   $('#tLbl').textContent=per==='today'?'הוצאות היום':per==='week'?'הוצאות ב-7 ימים':'הוצאות בטיול';
   $('#tTotal').textContent=fmt(total);
   let avg='';
@@ -521,10 +587,13 @@ function renderSum(){
     avg=`ממוצע <span class="num">${fmt(Math.round(total/days/100)*100)}</span> ליום`;
   }
   $('#tAvg').innerHTML=avg;
-  $('#tCash').textContent=fmt(sum(items.filter(i=>i.p==='cash')));
-  $('#tCard').textContent=fmt(sum(items.filter(i=>i.p==='card')));
+  $('#tCash').textContent=fmt(mySum(items.filter(i=>byMe(i)&&i.p==='cash')));
+  $('#tCard').textContent=fmt(mySum(items.filter(i=>byMe(i)&&i.p==='card')));
+  const byB=mySum(items.filter(i=>!byMe(i)));
+  $('#tBuddyRow').hidden=!byB;$('#tBuddyLbl').textContent=tB('{B} שילם');$('#tBuddy').textContent=fmt(byB);
+  renderBuddy();
 
-  const rows=CATS.map(c=>({...c,t:sum(items.filter(i=>i.k===c.k))})).filter(x=>x.t>0).sort((a,b)=>b.t-a.t);
+  const rows=CATS.map(c=>({...c,t:mySum(items.filter(i=>i.k===c.k))})).filter(x=>x.t>0).sort((a,b)=>b.t-a.t);
   const max=rows[0]?rows[0].t:1;
   $('#catBars').innerHTML=rows.length?rows.map(x=>`<div class="cb"><span>${x.e} ${x.n}</span><div class="track"><i style="width:${Math.max(3,x.t/max*100)}%;background:${x.c}"></i></div><b class="num">${fmt(x.t)}<small>${Math.round(x.t/total*100)}%</small></b></div>`).join('')
     :'<div class="sub">אין הוצאות בתקופה הזאת.</div>';
@@ -535,26 +604,87 @@ function renderSum(){
 }
 $('#cashCard').addEventListener('click',()=>openCash());
 
+/* ---------- החשבון מול החבר ---------- */
+function balTxt(b){
+  return b>0?`${S.buddy} חייב לך`:b<0?`אתה חייב ל${S.buddy}`:'אתם מאוזנים';
+}
+function renderBuddy(){
+  const card=$('#buddyCard');card.hidden=!S.buddy;if(!S.buddy)return;
+  const b=buddyBal(),shared=S.items.filter(i=>i.sp).length;
+  $('#bName').textContent=S.buddy;
+  $('#bTxt').textContent=balTxt(b);
+  $('#bBal').textContent=b?fmt(Math.abs(b)):'';
+  $('#bBal').style.color=b>0?'var(--cash)':b<0?'var(--danger)':'';
+  $('#bSub').textContent=shared?`${shared} הוצאות משותפות`:'עוד אין הוצאות משותפות. מסמנים «👥 חלוקה» במסך ההוספה.';
+}
+function openBuddy(){
+  const b=buddyBal(),B=esc(S.buddy);
+  sheet(`<h3>👥 ${B}: ${balTxt(b)} <span class="num">${b?fmt(Math.abs(b)):''}</span></h3>
+    <div class="sec" style="margin-top:4px">התחשבנות</div>
+    <div class="row" style="margin-top:0"><input id="sAmt" class="inp" inputmode="decimal" placeholder="סכום ($)" value="${b?Math.abs(b)/100:''}" onfocus="this.select()"></div>
+    <div class="seg pay" id="sPay" style="margin-top:8px"><button data-p="cash" class="on">💵 במזומן</button><button data-p="card">💳 בהעברה</button></div>
+    <div class="row"><button class="btn" id="sIn">${B} החזיר לי</button><button class="btn ghost" id="sOut">החזרתי ל${B}</button></div>
+    <p class="note" style="margin-top:6px">החזר במזומן משנה את המזומן בכיס. העברה (ביט, פייבוקס, Venmo) לא.</p>
+    <div class="sec">לשלוח ל${B}</div>
+    <div class="row" style="margin-top:0"><button class="btn ghost" id="sWa">פירוט החשבון לוואטסאפ (באנגלית)</button></div>`);
+  let p='cash';
+  $('#sPay').onclick=e=>{const o=e.target.closest('button');if(!o)return;p=o.dataset.p;$('#sPay').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===o))};
+  const settle=dir=>{
+    const c=parseMoney($('#sAmt').value);if(!c){toast('כמה? מספר בדולרים');return}
+    S.settles.push({id:uid(),c,d:today(),ts:Date.now(),dir,p});
+    save();closeSheet();renderAll();toast((dir==='in'?`${S.buddy} החזיר לך `:`החזרת ל${S.buddy} `)+fmt(c)+'. '+balTxt(buddyBal())+(buddyBal()?' '+fmt(Math.abs(buddyBal())):'')+'.');
+  };
+  $('#sIn').onclick=()=>settle('in');
+  $('#sOut').onclick=()=>settle('out');
+  $('#sWa').onclick=sendBuddyWa;
+}
+$('#buddyCard').addEventListener('click',openBuddy);
+// לחבר שולחים באנגלית: פירוט ההוצאות המשותפות מאז ההתחשבנות האחרונה, והיתרה
+const CAT_EN={food:'Food',fun:'Attractions',ride:'Transport',drink:'Drinks',stay:'Lodging',other:'Other'};
+function sendBuddyWa(){
+  const last=S.settles.reduce((m,x)=>Math.max(m,x.ts),0);
+  const rows=S.items.filter(i=>i.sp&&i.ts>last).sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:a.ts-b.ts);
+  const md=s=>{const [,m,d]=parts(s);return m+'/'+d};
+  const lines=[`Shared trip expenses${last?' since we last settled':''}:`];
+  rows.forEach(i=>{
+    const o=spOf(i).owed(i.c);
+    const who=byMe(i)?'I paid':'you paid';
+    lines.push(`${md(i.d)} ${CAT_EN[i.k]}${i.n?' ('+i.n+')':''}: $${(i.c/100).toFixed(2)}, ${who}${i.sp.startsWith('half')?', 50/50':''} → ${o>0?'you owe':'I owe'} $${(Math.abs(o)/100).toFixed(2)}`);
+  });
+  const b=buddyBal();
+  lines.push('',b>0?`Total: you owe me $${(b/100).toFixed(2)}`:b<0?`Total: I owe you $${(-b/100).toFixed(2)}`:'We are even 🙌');
+  const text=encodeURIComponent(lines.join('\n'));
+  if(isIOS)location.href='whatsapp://send?text='+text;else window.open('https://wa.me/?text='+text,'_blank');
+}
+
 /* ---------- list ---------- */
 function renderList(){
-  const all=[...S.items.map(i=>({...i,type:'x'})),...S.adds.map(a=>({...a,type:'add'}))];
+  const all=[...S.items.map(i=>({...i,type:'x'})),...S.adds.map(a=>({...a,type:'add'})),...S.settles.map(x=>({...x,type:'settle'}))];
   if(!all.length){$('#list').innerHTML='<div class="empty">עוד אין הוצאות.<br>רושמים במסך ההוספה: סכום ואז קטגוריה.</div>';return}
   all.sort((a,b)=>a.d===b.d?b.ts-a.ts:(a.d<b.d?1:-1));
   const days=[];let cur=null;
   for(const i of all){if(!cur||cur.d!==i.d){cur={d:i.d,list:[]};days.push(cur)}cur.list.push(i)}
   $('#list').innerHTML=days.map(g=>{
-    const t=sum(g.list.filter(i=>i.type==='x'));
+    const t=mySum(g.list.filter(i=>i.type==='x'));
     return `<div class="day"><div class="dayh"><span>${dayName(g.d)}</span><span class="num">${fmt(t)}</span></div><div class="rows">`+
-    g.list.map(i=>i.type==='add'
+    g.list.map(i=>i.type==='settle'
+      ?`<button class="it settle" data-settle="${esc(i.id)}"><span class="e">🤝</span><span class="t"><div>${i.dir==='in'?esc(S.buddy||'החבר')+' החזיר לי':'החזרתי ל'+esc(S.buddy||'חבר')} <small>${i.p==='cash'?'במזומן':'בהעברה'}</small></div></span><span class="a num">${i.dir==='in'?'+':'-'}${fmt(i.c)}</span></button>`
+      :i.type==='add'
       ?(isFix(i)
         ?`<button class="it fix" data-add="${esc(i.id)}"><span class="e">🧮</span><span class="t"><div>תיקון לפי ספירה</div></span><span class="a num">${i.c>0?'+':''}${fmt(i.c)}</span></button>`
         :`<button class="it add" data-add="${esc(i.id)}"><span class="e">🏧</span><span class="t"><div>משיכת מזומן</div></span><span class="a num">+${fmt(i.c)}</span></button>`)
-      :`<button class="it" data-id="${esc(i.id)}"><span class="e">${CAT[i.k].e}</span><span class="t"><div>${CAT[i.k].n}${i.n?` <small>${esc(i.n)}</small>`:''}</div></span><small>${i.p==='cash'?'💵':'💳'}</small><span class="a num">${fmt(i.c)}</span></button>`
+      :`<button class="it" data-id="${esc(i.id)}"><span class="e">${CAT[i.k].e}</span><span class="t"><div>${CAT[i.k].n}${i.n?` <small>${esc(i.n)}</small>`:''}</div>${i.sp?`<small class="share">👥 ${esc(tB(SPLITS[i.sp].chip))}, החלק שלך <span class="num">${fmt(mine(i))}</span></small>`:''}</span><small>${byMe(i)?(i.p==='cash'?'💵':'💳'):'👥'}</small><span class="a num">${fmt(i.c)}</span></button>`
     ).join('')+'</div></div>';
   }).join('');
 }
 $('#list').addEventListener('click',e=>{
   const b=e.target.closest('.it');if(!b)return;
+  if(b.dataset.settle){
+    const i=S.settles.findIndex(x=>x.id===b.dataset.settle);if(i<0)return;
+    const x=S.settles[i];S.settles.splice(i,1);save();renderAll();
+    toast('נמחק',()=>{S.settles.splice(i,0,x);save();renderAll();toast('שוחזר')});
+    return;
+  }
   if(b.dataset.id)openEdit(b.dataset.id);
   else if(b.dataset.add){
     const i=S.adds.findIndex(a=>a.id===b.dataset.add);if(i<0)return;
@@ -576,20 +706,23 @@ $('#sheet').addEventListener('click',e=>{if(e.target.id==='sheet'&&!sheetLocked)
 
 function openEdit(id){
   const it=S.items.find(x=>x.id===id);if(!it)return;
-  let k=it.k,p=it.p;
+  let k=it.k,p=it.p,sp=it.sp||'me';
   sheet(`<h3>עריכת הוצאה</h3>
     <label class="field"><span>סכום ($)</span><input id="eAmt" class="inp" inputmode="decimal" onfocus="this.select()" value="${it.c/100}"></label>
     <div class="chips" id="eCat">${CATS.map(c=>`<button data-k="${c.k}" class="${c.k===k?'on':''}">${c.e} ${c.n}</button>`).join('')}</div>
     <div class="seg pay" id="ePay" style="margin-bottom:12px"><button data-p="cash" class="${p==='cash'?'on':''}">💵 מזומן</button><button data-p="card" class="${p==='card'?'on':''}">💳 אשראי</button></div>
+    ${S.buddy||it.sp?`<div class="chips" id="eSp">${Object.entries(SPLITS).map(([key,v])=>`<button data-sp="${key}" class="${key===sp?'on':''}">${esc(tB(v.label))}</button>`).join('')}</div>`:''}
     <label class="field"><span>תאריך</span><input type="date" id="eDate" class="inp" max="${today()}" value="${esc(it.d)}"></label>
     <label class="field"><span>הערה</span><input id="eNote" class="inp" maxlength="60" value="${esc(it.n)}"></label>
     <div class="row"><button class="btn" id="eSave">שמירה</button><button class="btn danger" id="eDel">מחיקה</button></div>`);
   $('#eCat').onclick=e=>{const b=e.target.closest('button');if(!b)return;k=b.dataset.k;$('#eCat').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b))};
   $('#ePay').onclick=e=>{const b=e.target.closest('button');if(!b)return;p=b.dataset.p;$('#ePay').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b))};
+  if($('#eSp'))$('#eSp').onclick=e=>{const b=e.target.closest('button');if(!b)return;sp=b.dataset.sp;$('#eSp').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b))};
   $('#eSave').onclick=()=>{
     const c=parseMoney($('#eAmt').value);if(!c){toast('סכום לא תקין');return}
     const d=$('#eDate').value;
     Object.assign(it,{c,k,p,d:DRE.test(d)?d:it.d,n:$('#eNote').value.trim()});
+    if(sp==='me')delete it.sp;else it.sp=sp;
     save();closeSheet();renderAll();toast('עודכן');
   };
   $('#eDel').onclick=()=>{
@@ -639,6 +772,7 @@ $('#pCash').addEventListener('click',()=>openCash());
 function openSettings(){
   sheet(`<h3>הגדרות</h3>
     <label class="field"><span>מזומן בתחילת הטיול ($)</span><input id="sStart" class="inp" inputmode="decimal" onfocus="this.select()" value="${S.startCash===null?'':S.startCash/100}"></label>
+    <label class="field"><span>שם החבר לחלוקה (ריק = בלי חלוקה)</span><input id="sBuddy" class="inp" maxlength="20" value="${esc(S.buddy)}"></label>
     <label class="field"><span>תאריך סיום הטיול</span><input type="date" id="sEnd" class="inp" value="${esc(S.endDate)}"></label>
     <div class="row"><button class="btn" id="sSave">שמירה</button></div>
     <div class="sec">גיבוי</div>
@@ -662,6 +796,7 @@ function openSettings(){
     const c=v===''?null:parseMoney(v);
     if(v!==''&&c===null){toast('סכום המזומן לא תקין');return}
     S.startCash=c;
+    S.buddy=$('#sBuddy').value.trim().slice(0,20);if(!S.buddy)S.split='me';
     if(DRE.test($('#sEnd').value))S.endDate=$('#sEnd').value;
     save();closeSheet();renderAll();toast('נשמר');
   };
@@ -683,8 +818,9 @@ function onboard(){
 /* ---------- backup (טקסט לוואטסאפ) / restore / export ---------- */
 function backupText(){
   const d={v:1,s:S.startCash,e:S.endDate,
-    i:S.items.map(i=>[i.id,i.c,i.k,i.p,i.d,i.ts,i.n||'']),
-    a:S.adds.map(a=>[a.id,a.c,a.d,a.ts,a.t||'atm'])};
+    i:S.items.map(i=>[i.id,i.c,i.k,i.p,i.d,i.ts,i.n||'',i.sp||'']),
+    a:S.adds.map(a=>[a.id,a.c,a.d,a.ts,a.t||'atm']),
+    x:S.settles.map(x=>[x.id,x.c,x.d,x.ts,x.dir,x.p]),b:S.buddy};
   return `גיבוי «כסף בטיול» ${dm(today())}, ${S.items.length} הוצאות. לשחזור: הגדרות ⟵ שחזור, ולהדביק את כל ההודעה.\n`+JSON.stringify(d);
 }
 function fromJson(d){
@@ -692,9 +828,10 @@ function fromJson(d){
   if(Array.isArray(d.items))return normState(d);
   if(!Array.isArray(d.i))return null;
   const arr=x=>Array.isArray(x)?x:[];
-  return normState({startCash:d.s,endDate:d.e,
-    items:d.i.map(r=>{const [id,c,k,p,dd,ts,n]=arr(r);return {id,c,k,p,d:dd,ts,n}}),
-    adds:arr(d.a).map(r=>{const [id,c,dd,ts,t]=arr(r);return {id,c,d:dd,ts,t}})});
+  return normState({startCash:d.s,endDate:d.e,buddy:d.b,
+    items:d.i.map(r=>{const [id,c,k,p,dd,ts,n,sp]=arr(r);return {id,c,k,p,d:dd,ts,n,sp}}),
+    adds:arr(d.a).map(r=>{const [id,c,dd,ts,t]=arr(r);return {id,c,d:dd,ts,t}}),
+    settles:arr(d.x).map(r=>{const [id,c,dd,ts,dir,p]=arr(r);return {id,c,d:dd,ts,dir,p}})});
 }
 // מחפש את שורת ה-JSON בתוך הטקסט שהודבק (וואטסאפ מוסיף שעה, שם, שורות נוספות)
 function parseBackup(txt){
@@ -737,9 +874,10 @@ function openRestore(fromOnboard){
 }
 async function exportCsv(){
   const q=s=>'"'+String(s).replace(/"/g,'""')+'"';
-  const lines=[['תאריך','קטגוריה','הוצאה $','תשלום','הערה','מזומן נכנס $'].map(q).join(',')];
+  const lines=[['תאריך','קטגוריה','הוצאה $','החלק שלי $','תשלום','חלוקה','הערה','מזומן נכנס $'].map(q).join(',')];
   [...S.items].sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:a.ts-b.ts).forEach(i=>lines.push([i.d,CAT[i.k].n,(i.c/100).toFixed(2),i.p==='cash'?'מזומן':'אשראי',i.n||'',''].map(q).join(',')));
-  S.adds.forEach(a=>lines.push([a.d,isFix(a)?'תיקון לפי ספירה':'משיכת מזומן','','מזומן','',(a.c/100).toFixed(2)].map(q).join(',')));
+  S.adds.forEach(a=>lines.push([a.d,isFix(a)?'תיקון לפי ספירה':'משיכת מזומן','','','מזומן','','',(a.c/100).toFixed(2)].map(q).join(',')));
+  S.settles.forEach(x=>lines.push([x.d,'התחשבנות עם '+S.buddy,'','',x.p==='cash'?'מזומן':'העברה',x.dir==='in'?'החזיר לי':'החזרתי','',x.p==='cash'?((x.dir==='in'?x.c:-x.c)/100).toFixed(2):''].map(q).join(',')));
   const name='kesef-tiyul-'+today()+'.csv';
   const file=new File(['﻿'+lines.join('\r\n')],name,{type:'text/csv'});
   if(navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({files:[file]});return}catch(e){if(e.name==='AbortError')return}}
@@ -747,10 +885,11 @@ async function exportCsv(){
   setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000);
 }
 $('#waBtn').addEventListener('click',()=>{
-  const t=today(),all=S.items,tot=sum(all);
+  const t=today(),all=S.items,tot=mySum(all);
   const lines=[`💸 הוצאות בטיול עד ${dm(t)}`,`סה״כ: ${fmt(tot)}`];
-  CATS.map(c=>({...c,t:sum(all.filter(i=>i.k===c.k))})).filter(x=>x.t).sort((a,b)=>b.t-a.t).forEach(x=>lines.push(`${x.e} ${x.n}: ${fmt(x.t)}`));
-  lines.push('',`היום: ${fmt(sum(all.filter(i=>i.d===t)))}`);
+  CATS.map(c=>({...c,t:mySum(all.filter(i=>i.k===c.k))})).filter(x=>x.t).sort((a,b)=>b.t-a.t).forEach(x=>lines.push(`${x.e} ${x.n}: ${fmt(x.t)}`));
+  lines.push('',`היום: ${fmt(mySum(all.filter(i=>i.d===t)))}`);
+  if(S.buddy&&buddyBal())lines.push(`👥 ${balTxt(buddyBal())} ${fmt(Math.abs(buddyBal()))}`);
   if(S.startCash!==null)lines.push(`💵 מזומן בכיס: ${fmt(cashLeft())}`);
   const text=encodeURIComponent(lines.join('\n'));
   if(isIOS)location.href='whatsapp://send?text='+text;else window.open('https://wa.me/?text='+text,'_blank');
@@ -777,7 +916,7 @@ function go(v){
 $('#tabs').addEventListener('click',e=>{const b=e.target.closest('button');if(b)go(b.dataset.v)});
 document.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.go)));
 
-function renderAll(){renderStats();renderPay();renderDate();renderNote();renderRecent();renderBanner();renderSum();renderList()}
+function renderAll(){renderStats();renderPay();renderDate();renderSplit();renderNote();renderRecent();renderBanner();renderSum();renderList()}
 
 /* ---------- updates: גרסה חדשה נטענת רק כשהמסך פנוי ---------- */
 let reg=null,pendingReload=false;
