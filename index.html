@@ -54,6 +54,13 @@ nav.tabs button.on{color:var(--accent);font-weight:600}
 .banner{display:flex;align-items:center;gap:10px;background:var(--accent-soft);border-radius:12px;padding:7px 12px;font-size:13px;width:100%;text-align:right}
 .banner span{flex:1}
 .banner b{background:var(--accent);color:var(--on-accent);border-radius:9px;padding:5px 10px;white-space:nowrap}
+.banner .bb{background:var(--surface);color:var(--ink);border-radius:9px;padding:6px 10px;white-space:nowrap;font-size:13px;font-weight:600}
+.banner .bb.pri{background:var(--accent);color:var(--on-accent)}
+.pill.ok b{color:var(--cash)}
+.pill.over b{color:var(--danger)}
+#tips{display:flex;gap:6px}
+#tips button{flex:none;direction:ltr;min-height:34px;padding:0 10px;border-radius:12px;background:var(--surface2);font-size:14px;font-weight:600;color:var(--muted)}
+#tips button.on{background:var(--accent);color:var(--on-accent)}
 .amount{display:flex;justify-content:center;align-items:baseline;gap:4px;direction:ltr}
 .amount .cur{font-size:28px;color:var(--muted);font-weight:600}
 .amount #amt{font-size:clamp(44px,8vh,60px);line-height:1.15;font-weight:700;letter-spacing:-1px;font-variant-numeric:tabular-nums}
@@ -189,9 +196,10 @@ details.note ol{padding-inline-start:18px;margin-top:6px;display:flex;flex-direc
   <section id="v-add" class="view on">
     <div class="stats">
       <button class="pill" id="pCash"><span>💵 בכיס</span><b class="num" id="sCash">$0</b></button>
-      <button class="pill" data-go="list"><span>היום</span><b class="num" id="sToday">$0</b></button>
+      <button class="pill" id="pToday" data-go="list"><span id="sTodayLbl">היום</span><b class="num" id="sToday">$0</b></button>
     </div>
     <button class="banner" id="bkBanner" hidden><span id="bkBannerTxt"></span><b>לגבות עכשיו</b></button>
+    <div class="banner" id="gapBanner" hidden><span id="gapTxt"></span><button class="bb" id="gapZero">לא הוצאתי</button><button class="bb pri" id="gapLog">לרשום</button></div>
     <div class="amount blank" id="amtBox"><span class="cur">$</span><span id="amt">0</span></div>
     <div class="ctl">
       <div class="seg pay" id="paySeg">
@@ -204,7 +212,7 @@ details.note ol{padding-inline-start:18px;margin-top:6px;display:flex;flex-direc
         <label class="past" id="pickBtn" data-d="pick"><span id="pickLbl">📅</span><input type="date" id="dateIn" aria-label="תאריך אחר"></label>
       </div>
     </div>
-    <div class="quick"><button class="chip" id="noteBtn">+ הערה</button><button class="chip split" id="splitBtn">👥 חלוקה</button><span id="recent"></span></div>
+    <div class="quick"><button class="chip" id="noteBtn">+ הערה</button><button class="chip split" id="splitBtn">👥 חלוקה</button><span id="recent"></span><span id="tips" hidden></span></div>
     <div id="noteRow" hidden><input id="noteIn" class="inp" maxlength="60" placeholder="למשל: פיצה בברוקלין" enterkeyhint="done"></div>
     <p class="hint" id="hint" hidden></p>
     <div class="cats" id="cats"></div>
@@ -229,7 +237,7 @@ details.note ol{padding-inline-start:18px;margin-top:6px;display:flex;flex-direc
       <button data-per="all" class="on">כל הטיול</button>
     </div>
     <div class="grid2">
-      <div class="card"><div class="lbl" id="tLbl">הוצאות</div><div class="mid num" id="tTotal">$0</div><div class="sub" id="tAvg"></div></div>
+      <div class="card"><div class="lbl" id="tLbl">הוצאות</div><div class="mid num" id="tTotal">$0</div><div class="sub" id="tAvg"></div><div class="sub num" id="tIls"></div></div>
       <div class="card"><div class="lbl">איך שילמתי</div>
         <div class="split">
           <div><span><i class="dot" style="background:var(--cash)"></i>מזומן</span><b class="num" id="tCash">$0</b></div>
@@ -348,7 +356,7 @@ const buddyBal=()=>S.items.reduce((t,i)=>t+spOf(i).owed(i.c),0)+S.settles.reduce
 
 /* ---------- state ---------- */
 const DRE=/^\d{4}-\d\d-\d\d$/,IDRE=/^[a-z0-9]{4,24}$/i;
-function fresh(){return {v:1,startCash:null,endDate:'2026-12-13',adds:[],items:[],settles:[],pay:'cash',split:'me',buddy:'סטיב',lastBackup:null}}
+function fresh(){return {v:1,startCash:null,endDate:'2026-12-13',adds:[],items:[],settles:[],zeroDays:[],budget:null,rate:null,pay:'cash',split:'me',buddy:'סטיב',lastBackup:null}}
 function normItem(x){
   if(!x||!IDRE.test(x.id)||!Number.isInteger(x.c)||x.c<=0||!DRE.test(x.d))return null;
   const it={id:x.id,c:x.c,k:CAT[x.k]?x.k:'other',p:x.p==='card'?'card':'cash',d:x.d,ts:Number.isFinite(x.ts)?x.ts:0,n:typeof x.n==='string'?x.n.slice(0,60):''};
@@ -371,6 +379,9 @@ function normState(d){
     startCash:Number.isInteger(d.startCash)&&d.startCash>=0?d.startCash:null,
     endDate:DRE.test(d.endDate)?d.endDate:'2026-12-13',
     buddy:typeof d.buddy==='string'?d.buddy.slice(0,20):'סטיב',
+    budget:Number.isInteger(d.budget)&&d.budget>0?d.budget:null,
+    rate:typeof d.rate==='number'&&d.rate>1&&d.rate<10?d.rate:null,
+    zeroDays:Array.isArray(d.zeroDays)?d.zeroDays.filter(x=>DRE.test(x)).slice(-200):[],
     items:items.filter(Boolean),adds:adds.filter(Boolean),settles:settles.filter(Boolean),
     dropped:[...items,...adds,...settles].filter(x=>!x).length,
   };
@@ -399,7 +410,7 @@ const unrecorded=()=>-sum(S.adds.filter(isFix));
 const daysLeft=()=>Math.max(1,diff(today(),S.endDate)+1);
 
 /* ---------- add view ---------- */
-let amt='',dateSel='today',customDate=null,hiddenAt=0,lockUntil=0;
+let amt='',dateSel='today',customDate=null,hiddenAt=0,lockUntil=0,tipBase=null,tipPct=0;
 const selDate=()=>dateSel==='today'?today():dateSel==='yday'?addDays(today(),-1):customDate;
 
 $('#cats').innerHTML=CATS.map(c=>`<button class="cat" data-k="${c.k}" style="--c:${c.c}"><span class="e">${c.e}</span><span>${c.n}</span></button>`).join('');
@@ -411,9 +422,12 @@ function renderAmt(){
   box.classList.toggle('blank',!amt);
   box.classList.toggle('pay-cash',S.pay==='cash');
   box.classList.toggle('pay-card',S.pay==='card');
-  $('#recent').style.visibility=amt?'hidden':'visible';
+  // כשמוקלד סכום, במקום הצירופים החוזרים מופיעים כפתורי טיפ
+  $('#recent').hidden=!!amt;$('#tips').hidden=!amt;
+  $('#tips').innerHTML=[18,20,25].map(t=>`<button data-t="${t}" class="${tipPct===t?'on':''}">+${t}%</button>`).join('');
 }
 function press(k){
+  tipBase=null;tipPct=0;
   if(k==='del')amt=amt.slice(0,-1);
   else if(k==='.'){if(!amt.includes('.'))amt=(amt||'0')+'.'}
   else{
@@ -426,7 +440,15 @@ function press(k){
   renderAmt();
 }
 $('#pad').addEventListener('click',e=>{const b=e.target.closest('button');if(b)press(b.dataset.k)});
-$('#amtBox').addEventListener('click',()=>{amt='';renderAmt()});
+$('#amtBox').addEventListener('click',()=>{amt='';tipBase=null;tipPct=0;renderAmt()});
+$('#tips').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  const t=+b.dataset.t;
+  if(tipBase===null)tipBase=amt;
+  if(tipPct===t){amt=tipBase;tipBase=null;tipPct=0}  // נגיעה שנייה באותו טיפ מבטלת
+  else{const c=parseMoney(tipBase);if(!c)return;amt=(Math.round(c*(100+t)/100)/100).toFixed(2).replace(/\.00$/,'');tipPct=t}
+  renderAmt();
+});
 
 function renderDate(){
   document.querySelectorAll('#dateSeg [data-d]').forEach(b=>b.classList.toggle('on',b.dataset.d===dateSel));
@@ -497,7 +519,8 @@ function addExpense(c,k,p,n,el,sp){
   const when=it.d!==today()?' ('+dayName(it.d)+')':'';
   const how=byMe(it)?(p==='cash'?'מזומן':'אשראי'):tB('{B} שילם');
   const split={half:', חצי',halfB:', חצי',forB:', '+tB('על {B}')}[it.sp]||'';
-  toast(`נשמר: ${fmt(c)} ${CAT[k].n}, ${how}${split}${when}`,()=>{
+  const lt=leftToday(),bud=lt!==null&&it.d===today()&&k!=='stay'?` ${lt>=0?'נשאר להיום':'חריגה היום'} ${fmt(Math.abs(lt))}.`:'';
+  toast(`נשמר: ${fmt(c)} ${CAT[k].n}, ${how}${split}${when}.${bud}`,()=>{
     S.items=S.items.filter(x=>x.id!==it.id);save();renderAll();toast('בוטל');
   });
 }
@@ -508,7 +531,9 @@ $('#cats').addEventListener('click',e=>{
     if(Date.now()<lockUntil)return; // נגיעה כפולה מהירה אחרי שמירה
     const a=$('#amtBox');a.classList.remove('shake');void a.offsetWidth;a.classList.add('shake');toast('קודם סכום');return;
   }
-  const n=$('#noteIn').value.trim();
+  let n=$('#noteIn').value.trim();
+  if(tipPct)n=(n?n+', ':'')+'כולל טיפ '+tipPct+'%';
+  tipBase=null;tipPct=0;
   amt='';$('#noteIn').value='';$('#noteRow').hidden=true;renderNote();
   addExpense(c,b.dataset.k,S.pay,n,b,S.split);
   maybeReload();
@@ -536,8 +561,27 @@ function renderStats(){
   const left=cashLeft();
   $('#sCash').textContent=fmt(left);
   $('#pCash').classList.toggle('low',S.startCash!==null&&left<cashTotal()*0.15);
-  $('#sToday').textContent=fmt(mySum(S.items.filter(i=>i.d===today())));
+  const lt=leftToday(),pt=$('#pToday');
+  if(lt===null){$('#sTodayLbl').textContent='היום';$('#sToday').textContent=fmt(mySum(S.items.filter(i=>i.d===today())));pt.classList.remove('ok','over')}
+  else{$('#sTodayLbl').textContent=lt>=0?'נשאר להיום':'חריגה היום';$('#sToday').textContent=fmt(Math.abs(lt));pt.classList.toggle('ok',lt>=0);pt.classList.toggle('over',lt<0)}
 }
+
+/* ---------- תקציב יומי, שקלים, ויום שנשאר ריק ---------- */
+// לינה לא נספרת בקצב היומי: היא תשלום גדול שמעוות את היום שבו שולם
+const leftToday=()=>S.budget?S.budget-mySum(S.items.filter(i=>i.d===today()&&i.k!=='stay')):null;
+const ils=c=>'₪'+Math.round(c/100*S.rate).toLocaleString('en-US');
+function gapDay(){
+  if(S.startCash===null||!S.items.length)return null;
+  const y=addDays(today(),-1),first=S.items.reduce((m,i)=>i.d<m?i.d:m,today());
+  if(y<first||S.zeroDays.includes(y)||S.items.some(i=>i.d===y))return null;
+  return y;
+}
+function renderGap(){
+  const y=gapDay();$('#gapBanner').hidden=!y;
+  if(y){$('#gapTxt').textContent=`אתמול (${dm(y)}) אין אף הוצאה.`;$('#bkBanner').hidden=true}
+}
+$('#gapZero').addEventListener('click',()=>{const y=gapDay();if(!y)return;S.zeroDays.push(y);save();renderAll();toast(dm(y)+' סומן כיום בלי הוצאות')});
+$('#gapLog').addEventListener('click',()=>{dateSel='yday';renderDate();$('#gapBanner').hidden=true;toast('רושמים לאתמול: סכום ואז קטגוריה')});
 
 /* ---------- backup nudge ---------- */
 function backupDue(){
@@ -587,6 +631,7 @@ function renderSum(){
     avg=`ממוצע <span class="num">${fmt(Math.round(total/days/100)*100)}</span> ליום`;
   }
   $('#tAvg').innerHTML=avg;
+  $('#tIls').textContent=S.rate&&total?'≈ '+ils(total):'';
   $('#tCash').textContent=fmt(mySum(items.filter(i=>byMe(i)&&i.p==='cash')));
   $('#tCard').textContent=fmt(mySum(items.filter(i=>byMe(i)&&i.p==='card')));
   const byB=mySum(items.filter(i=>!byMe(i)));
@@ -741,7 +786,7 @@ function openCash(){
       <input id="wFee" class="inp" inputmode="decimal" placeholder="עמלה ($)" style="flex:1">
     </div>
     <div class="row"><button class="btn" id="wGo">הוספה למזומן</button></div>
-    <p class="note" style="margin-top:6px">העמלה נרשמת כהוצאה «אחר» באשראי.</p>
+    <p class="note" style="margin-top:6px">העמלה נרשמת כהוצאה «אחר» באשראי. בכספומט ובקופה בוחרים לחייב בדולרים ומסרבים להמרה שלהם (Decline conversion): היא יקרה יותר.</p>
     <div class="sec">ספרתי את הכסף בארנק</div>
     <div class="row" style="margin-top:0">
       <input id="fAmt" class="inp" inputmode="decimal" placeholder="כמה יש לך בפועל ($)" style="flex:1">
@@ -772,6 +817,8 @@ $('#pCash').addEventListener('click',()=>openCash());
 function openSettings(){
   sheet(`<h3>הגדרות</h3>
     <label class="field"><span>מזומן בתחילת הטיול ($)</span><input id="sStart" class="inp" inputmode="decimal" onfocus="this.select()" value="${S.startCash===null?'':S.startCash/100}"></label>
+    <label class="field"><span>תקציב יומי ($), בלי לינה. ריק = בלי תקציב</span><input id="sBudget" class="inp" inputmode="decimal" onfocus="this.select()" value="${S.budget?S.budget/100:''}"></label>
+    <label class="field"><span>שער הדולר בשקלים, כולל עמלת האשראי (לא חובה)</span><input id="sRate" class="inp" inputmode="decimal" placeholder="למשל 3.80" value="${S.rate||''}"></label>
     <label class="field"><span>שם החבר לחלוקה (ריק = בלי חלוקה)</span><input id="sBuddy" class="inp" maxlength="20" value="${esc(S.buddy)}"></label>
     <label class="field"><span>תאריך סיום הטיול</span><input type="date" id="sEnd" class="inp" value="${esc(S.endDate)}"></label>
     <div class="row"><button class="btn" id="sSave">שמירה</button></div>
@@ -795,6 +842,11 @@ function openSettings(){
     const v=$('#sStart').value.trim();
     const c=v===''?null:parseMoney(v);
     if(v!==''&&c===null){toast('סכום המזומן לא תקין');return}
+    const bv=$('#sBudget').value.trim(),bc=bv===''?null:parseMoney(bv);
+    if(bv!==''&&!bc){toast('התקציב היומי לא תקין');return}
+    const rv=$('#sRate').value.trim().replace(',','.'),rn=rv===''?null:+rv;
+    if(rv!==''&&!(rn>1&&rn<10)){toast('השער לא תקין. למשל 3.80');return}
+    S.budget=bc;S.rate=rn;
     S.startCash=c;
     S.buddy=$('#sBuddy').value.trim().slice(0,20);if(!S.buddy)S.split='me';
     if(DRE.test($('#sEnd').value))S.endDate=$('#sEnd').value;
@@ -820,7 +872,7 @@ function backupText(){
   const d={v:1,s:S.startCash,e:S.endDate,
     i:S.items.map(i=>[i.id,i.c,i.k,i.p,i.d,i.ts,i.n||'',i.sp||'']),
     a:S.adds.map(a=>[a.id,a.c,a.d,a.ts,a.t||'atm']),
-    x:S.settles.map(x=>[x.id,x.c,x.d,x.ts,x.dir,x.p]),b:S.buddy};
+    x:S.settles.map(x=>[x.id,x.c,x.d,x.ts,x.dir,x.p]),b:S.buddy,g:S.budget,r:S.rate,z:S.zeroDays};
   return `גיבוי «כסף בטיול» ${dm(today())}, ${S.items.length} הוצאות. לשחזור: הגדרות ⟵ שחזור, ולהדביק את כל ההודעה.\n`+JSON.stringify(d);
 }
 function fromJson(d){
@@ -828,7 +880,7 @@ function fromJson(d){
   if(Array.isArray(d.items))return normState(d);
   if(!Array.isArray(d.i))return null;
   const arr=x=>Array.isArray(x)?x:[];
-  return normState({startCash:d.s,endDate:d.e,buddy:d.b,
+  return normState({startCash:d.s,endDate:d.e,buddy:d.b,budget:d.g,rate:d.r,zeroDays:d.z,
     items:d.i.map(r=>{const [id,c,k,p,dd,ts,n,sp]=arr(r);return {id,c,k,p,d:dd,ts,n,sp}}),
     adds:arr(d.a).map(r=>{const [id,c,dd,ts,t]=arr(r);return {id,c,d:dd,ts,t}}),
     settles:arr(d.x).map(r=>{const [id,c,dd,ts,dir,p]=arr(r);return {id,c,d:dd,ts,dir,p}})});
@@ -886,7 +938,7 @@ async function exportCsv(){
 }
 $('#waBtn').addEventListener('click',()=>{
   const t=today(),all=S.items,tot=mySum(all);
-  const lines=[`💸 הוצאות בטיול עד ${dm(t)}`,`סה״כ: ${fmt(tot)}`];
+  const lines=[`💸 הוצאות בטיול עד ${dm(t)}`,`סה״כ: ${fmt(tot)}${S.rate?' (≈ '+ils(tot)+')':''}`];
   CATS.map(c=>({...c,t:mySum(all.filter(i=>i.k===c.k))})).filter(x=>x.t).sort((a,b)=>b.t-a.t).forEach(x=>lines.push(`${x.e} ${x.n}: ${fmt(x.t)}`));
   lines.push('',`היום: ${fmt(mySum(all.filter(i=>i.d===t)))}`);
   if(S.buddy&&buddyBal())lines.push(`👥 ${balTxt(buddyBal())} ${fmt(Math.abs(buddyBal()))}`);
@@ -916,7 +968,7 @@ function go(v){
 $('#tabs').addEventListener('click',e=>{const b=e.target.closest('button');if(b)go(b.dataset.v)});
 document.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.go)));
 
-function renderAll(){renderStats();renderPay();renderDate();renderSplit();renderNote();renderRecent();renderBanner();renderSum();renderList()}
+function renderAll(){renderStats();renderPay();renderDate();renderSplit();renderNote();renderRecent();renderBanner();renderGap();renderSum();renderList()}
 
 /* ---------- updates: גרסה חדשה נטענת רק כשהמסך פנוי ---------- */
 let reg=null,pendingReload=false;
