@@ -134,7 +134,11 @@ h2{font-size:22px;margin:4px 0 12px}
 .split{display:flex;flex-direction:column;gap:4px;font-size:15px}
 .split div{display:flex;justify-content:space-between}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-inline-end:6px}
-#perSeg{margin-bottom:12px}
+#perSeg{margin-bottom:8px}
+.sumcats{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:12px}
+.sumcats .t{width:100%;text-align:center;font-size:12px;color:var(--muted)}
+.sumcats button{min-height:34px;padding:0 10px;border-radius:12px;background:var(--surface);border:1px solid var(--line);font-size:13px;font-weight:600}
+.sumcats button.off{background:none;color:var(--muted);text-decoration:line-through;font-weight:400;opacity:.7}
 .cb{display:grid;grid-template-columns:108px 1fr auto;align-items:center;gap:10px;padding:7px 0;font-size:14px}
 .cb .track{height:10px;border-radius:6px;background:var(--surface2);overflow:hidden}
 .cb .track i{display:block;height:100%;border-radius:6px}
@@ -219,8 +223,8 @@ details.note ol{text-align:right}
       <button class="pill" id="pCash"><span>💵 בכיס</span><b class="num" id="sCash">$0</b></button>
       <button class="pill" id="pToday" data-go="list"><span id="sTodayLbl">היום</span><b class="num" id="sToday">$0</b></button>
     </div>
-    <button class="banner" id="bkBanner" hidden><span id="bkBannerTxt"></span><b>לגבות עכשיו</b></button>
-    <div class="banner" id="gapBanner" hidden><span id="gapTxt"></span><button class="bb" id="gapZero">לא הוצאתי</button><button class="bb pri" id="gapLog">לרשום</button></div>
+    <button class="banner" id="bkBanner" hidden><span id="bkBannerTxt"></span><b>גיבוי עכשיו</b></button>
+    <div class="banner" id="gapBanner" hidden><span id="gapTxt"></span><button class="bb" id="gapZero">לא הוצאתי</button><button class="bb pri" id="gapLog">רישום</button></div>
     <div class="amount blank" id="amtBox"><span class="cur">$</span><span id="amt">0</span></div>
     <button class="cityBtn" id="cityBtn">📍 עיר</button>
     <div class="ctl">
@@ -258,6 +262,7 @@ details.note ol{text-align:right}
       <button data-per="week">7 ימים</button>
       <button data-per="all" class="on">כל הטיול</button>
     </div>
+    <div class="sumcats" id="sumCats"></div>
     <div class="grid2">
       <div class="card"><div class="lbl" id="tLbl">הוצאות</div><div class="mid num" id="tTotal">$0</div><div class="sub" id="tAvg"></div><div class="sub num" id="tIls"></div></div>
       <div class="card"><div class="lbl">איך שילמתי</div>
@@ -308,7 +313,7 @@ details.note ol{text-align:right}
     <li>פותחים מהאייקון «כסף בטיול» במסך הבית.</li>
   </ol>
   <div class="warn">מה שנרשם בדפדפן לא עובר לאפליקציה שבמסך הבית. לכן רושמים רק מתוך האייקון.</div>
-  <div class="note">טיפ: גרור את האייקון לשורה התחתונה של המסך (ה-Dock). ככה הוא במרחק נגיעה אחת מכל מקום.</div>
+  <div class="note">טיפ: אם גוררים את האייקון לשורה התחתונה של המסך (ה-Dock), הוא במרחק נגיעה אחת מכל מקום.</div>
 </div>
 
 <script>
@@ -343,7 +348,7 @@ const dayName=s=>{
   if(s===addDays(today(),-1))return 'אתמול';
   const [y,m,d]=parts(s);return 'יום '+DOW[new Date(y,m-1,d).getDay()]+' '+dm(s);
 };
-const daysTxt=n=>n===1?'יום אחד':n+' ימים';
+const daysTxt=n=>n===1?'יום אחד':n===2?'יומיים':n+' ימים';
 const fmt=c=>{
   const neg=c<0;c=Math.abs(c);
   const s=(c/100).toLocaleString('en-US',{minimumFractionDigits:c%100?2:0,maximumFractionDigits:2});
@@ -366,8 +371,8 @@ const SPLITS={
   me:   {label:'רק שלי',             chip:'חלוקה',       mine:c=>c,                 owed:c=>0,                    byMe:true},
   half: {label:'חצי-חצי, אני שילמתי', chip:'חצי',         mine:c=>Math.round(c/2),   owed:c=>c-Math.round(c/2),    byMe:true},
   halfB:{label:'חצי-חצי, {B} שילם',   chip:'חצי, {B} שילם',mine:c=>Math.round(c/2),   owed:c=>-Math.round(c/2),     byMe:false},
-  forB: {label:'שילמתי על {B}, כולו שלו',chip:'על {B}',    mine:c=>0,                 owed:c=>c,                    byMe:true},
-  byB:  {label:'{B} שילם עליי',        chip:'{B} שילם',    mine:c=>c,                 owed:c=>-c,                   byMe:false},
+  forB: {label:'שילמתי בשביל {B}, כולו שלו',chip:'בשביל {B}',    mine:c=>0,                 owed:c=>c,                    byMe:true},
+  byB:  {label:'{B} שילם בשבילי',        chip:'{B} שילם',    mine:c=>c,                 owed:c=>-c,                   byMe:false},
 };
 const BUDDY=()=>S.buddy;
 const tB=s=>s.replace(/\{B\}/g,S.buddy||'החבר');
@@ -379,7 +384,7 @@ const buddyBal=()=>S.items.reduce((t,i)=>t+spOf(i).owed(i.c),0)+S.settles.reduce
 
 /* ---------- state ---------- */
 const DRE=/^\d{4}-\d\d-\d\d$/,IDRE=/^[a-z0-9]{4,24}$/i;
-function fresh(){return {v:1,startCash:null,endDate:'2026-12-13',adds:[],items:[],settles:[],zeroDays:[],budget:null,rate:null,city:'',cities:[],pay:'cash',split:'me',buddy:'סטיב',lastBackup:null}}
+function fresh(){return {v:1,startCash:null,endDate:'2026-12-13',adds:[],items:[],settles:[],zeroDays:[],budget:null,rate:null,city:'',cities:[],sumOff:[],pay:'cash',split:'me',buddy:'סטיב',lastBackup:null}}
 function normItem(x){
   if(!x||!IDRE.test(x.id)||!Number.isInteger(x.c)||x.c<=0||!DRE.test(x.d))return null;
   const it={id:x.id,c:x.c,k:CAT[x.k]?x.k:'other',p:x.p==='card'?'card':'cash',d:x.d,ts:Number.isFinite(x.ts)?x.ts:0,n:typeof x.n==='string'?x.n.slice(0,60):''};
@@ -407,6 +412,7 @@ function normState(d){
     rate:typeof d.rate==='number'&&d.rate>1&&d.rate<10?d.rate:null,
     zeroDays:Array.isArray(d.zeroDays)?d.zeroDays.filter(x=>DRE.test(x)).slice(-200):[],
     city:typeof d.city==='string'?d.city.slice(0,40):'',
+    sumOff:Array.isArray(d.sumOff)?d.sumOff.filter(k=>CAT[k]):[],
     cities:Array.isArray(d.cities)?d.cities.filter(x=>typeof x==='string'&&x.trim()).map(x=>x.slice(0,40)).slice(0,8):[],
     items:items.filter(Boolean),adds:adds.filter(Boolean),settles:settles.filter(Boolean),
     dropped:[...items,...adds,...settles].filter(x=>!x).length,
@@ -545,7 +551,7 @@ function addExpense(c,k,p,n,el,sp){
   renderAll();
   const when=it.d!==today()?' ('+dayName(it.d)+')':'';
   const how=byMe(it)?(p==='cash'?'מזומן':'אשראי'):tB('{B} שילם');
-  const split={half:', חצי',halfB:', חצי',forB:', '+tB('על {B}')}[it.sp]||'';
+  const split={half:', חצי',halfB:', חצי',forB:', '+tB('בשביל {B}')}[it.sp]||'';
   const lt=leftToday(),bud=lt!==null&&it.d===today()&&k!=='stay'?` ${lt>=0?'נשאר להיום':'חריגה היום'} ${fmt(Math.abs(lt))}.`:'';
   toast(`נשמר: ${fmt(c)} ${CAT[k].n}, ${how}${split}${when}.${bud}`,()=>{
     S.items=S.items.filter(x=>x.id!==it.id);save();renderAll();toast('בוטל');
@@ -556,7 +562,7 @@ $('#cats').addEventListener('click',e=>{
   const c=parseMoney(amt);
   if(!c){
     if(Date.now()<lockUntil)return; // נגיעה כפולה מהירה אחרי שמירה
-    const a=$('#amtBox');a.classList.remove('shake');void a.offsetWidth;a.classList.add('shake');toast('קודם סכום');return;
+    const a=$('#amtBox');a.classList.remove('shake');void a.offsetWidth;a.classList.add('shake');toast('קודם מקלידים סכום');return;
   }
   let n=$('#noteIn').value.trim();
   if(tipPct)n=(n?n+', ':'')+'כולל טיפ '+tipPct+'%';
@@ -605,7 +611,7 @@ function gapDay(){
 }
 function renderGap(){
   const y=gapDay();$('#gapBanner').hidden=!y;
-  if(y){$('#gapTxt').textContent=`אתמול (${dm(y)}) אין אף הוצאה.`;$('#bkBanner').hidden=true}
+  if(y){$('#gapTxt').textContent=`אתמול (${dm(y)}) לא נרשמה אף הוצאה.`;$('#bkBanner').hidden=true}
 }
 $('#gapZero').addEventListener('click',()=>{const y=gapDay();if(!y)return;S.zeroDays.push(y);save();renderAll();toast(dm(y)+' סומן כיום בלי הוצאות')});
 $('#gapLog').addEventListener('click',()=>{dateSel='yday';renderDate();$('#gapBanner').hidden=true;toast('רושמים לאתמול: סכום ואז קטגוריה')});
@@ -633,7 +639,7 @@ function openCity(){
   if($('#cityClear'))$('#cityClear').onclick=()=>setCity('');
   $('#geoBtn').onclick=()=>{
     if(!navigator.geolocation){msg('אין גישה למיקום במכשיר הזה. אפשר להקליד.');return}
-    msg('מאתר...');
+    msg('מאתר את העיר...');
     navigator.geolocation.getCurrentPosition(async pos=>{
       const la=pos.coords.latitude.toFixed(2),lo=pos.coords.longitude.toFixed(2);
       try{
@@ -643,7 +649,7 @@ function openCity(){
         if(!name)throw 0;
         if($('#sheet').classList.contains('on'))setCity(name);
       }catch(e){msg('אין רשת כרגע. אפשר להקליד את שם העיר או לבחור מהרשימה.')}
-    },err=>msg(err.code===1?'אין הרשאה למיקום. אפשר לאשר בהגדרות האייפון, או להקליד.':'לא הצלחתי לאתר. אפשר להקליד.'),
+    },err=>msg(err.code===1?'אין הרשאה למיקום. אפשר לאשר בהגדרות האייפון, או להקליד.':'האיתור לא הצליח. אפשר להקליד.'),
     {enableHighAccuracy:false,timeout:15000,maximumAge:600000});
   };
 }
@@ -687,14 +693,15 @@ function renderSum(){
   $('#cBar').style.width=pct+'%';
   $('#cBarW').classList.toggle('low',pct<15);
   $('#cSub').innerHTML=S.startCash===null?'עוד לא הוגדר כמה מזומן יש לך.':
-    `מתוך <span class="num">${fmt(tot)}</span>. במזומן: <span class="num">${fmt(Math.max(0,Math.floor(left/dl/100)*100))}</span> ליום עד ${dm(S.endDate)} (${daysTxt(dl)}).`;
+    `מתוך <span class="num">${fmt(tot)}</span>. זה מספיק ל-<span class="num">${fmt(Math.max(0,Math.floor(left/dl/100)*100))}</span> ליום עד ${dm(S.endDate)} (${daysTxt(dl)}).`;
   const u=unrecorded();
   $('#cFix').hidden=!u;
   $('#cFix').innerHTML=u>0?`מזומן שלא נרשם: <span class="num">${fmt(u)}</span>`:`עודף שנמצא בספירה: <span class="num">${fmt(-u)}</span>`;
 
   // כל הסכומים בסיכום הם החלק שלי, לא מה שעבר בקופה
-  const items=periodItems(),total=mySum(items);
-  $('#tLbl').textContent=per==='today'?'הוצאות היום':per==='week'?'הוצאות ב-7 ימים':'הוצאות בטיול';
+  const items=periodItems().filter(i=>!S.sumOff.includes(i.k)),total=mySum(items);
+  renderSumCats();
+  $('#tLbl').textContent=(per==='today'?'הוצאות היום':per==='week'?'הוצאות ב-7 ימים':'הוצאות בטיול')+(S.sumOff.length?', בלי '+S.sumOff.map(k=>CAT[k].n).join(' ו'):'');
   $('#tTotal').textContent=fmt(total);
   let avg='';
   if(per!=='today'&&items.length){
@@ -721,11 +728,23 @@ function renderSum(){
   $('#bkInfo').textContent=!lb?'עוד לא גיבית. הנתונים שמורים רק בטלפון.':
     'גיבוי אחרון: '+(()=>{const d=diff(ymd(new Date(lb)),today());return d<=0?'היום':d===1?'אתמול':'לפני '+daysTxt(d)})();
 }
+/* מה נספר בסיכום: למשל בלי אטרקציות ותחבורה, כדי לראות כמה עולה המחיה עצמה */
+function renderSumCats(){
+  $('#sumCats').innerHTML='<div class="t">מה נספר בסיכום (נגיעה מוציאה או מחזירה)</div>'+
+    CATS.map(c=>`<button data-k="${c.k}" class="${S.sumOff.includes(c.k)?'off':''}">${c.e} ${c.n}</button>`).join('');
+}
+$('#sumCats').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  const k=b.dataset.k;
+  S.sumOff=S.sumOff.includes(k)?S.sumOff.filter(x=>x!==k):[...S.sumOff,k];
+  if(S.sumOff.length===CATS.length)S.sumOff=S.sumOff.filter(x=>x!==k); // לפחות קטגוריה אחת נשארת
+  save();renderSum();
+});
 $('#cashCard').addEventListener('click',()=>openCash());
 
 /* ---------- החשבון מול החבר ---------- */
 function balTxt(b){
-  return b>0?`${S.buddy} חייב לך`:b<0?`אתה חייב ל${S.buddy}`:'אתם מאוזנים';
+  return b>0?`${S.buddy} חייב לך`:b<0?`אתה חייב ל${S.buddy}`:'מאוזנים';
 }
 function renderBuddy(){
   const card=$('#buddyCard');card.hidden=!S.buddy;if(!S.buddy)return;
@@ -744,7 +763,7 @@ function openBuddy(){
     <div class="seg pay" id="sPay" style="margin-top:8px"><button data-p="cash" class="on">💵 במזומן</button><button data-p="card">💳 בהעברה</button></div>
     <div class="row"><button class="btn" id="sIn">${B} החזיר לי</button><button class="btn ghost" id="sOut">החזרתי ל${B}</button></div>
     <p class="note" style="margin-top:6px">החזר במזומן משנה את המזומן בכיס. העברה (ביט, פייבוקס, Venmo) לא.</p>
-    <div class="sec">לשלוח ל${B}</div>
+    <div class="sec">שליחה ל${B}</div>
     <div class="row" style="margin-top:0"><button class="btn ghost" id="sWa">פירוט החשבון לוואטסאפ (באנגלית)</button></div>`);
   let p='cash';
   $('#sPay').onclick=e=>{const o=e.target.closest('button');if(!o)return;p=o.dataset.p;$('#sPay').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===o))};
@@ -860,7 +879,7 @@ function openEdit(id){
   $('#ePay').onclick=e=>{const b=e.target.closest('button');if(!b)return;p=b.dataset.p;$('#ePay').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b))};
   if($('#eSp'))$('#eSp').onclick=e=>{const b=e.target.closest('button');if(!b)return;sp=b.dataset.sp;$('#eSp').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b))};
   $('#eSave').onclick=()=>{
-    const c=parseMoney($('#eAmt').value);if(!c){toast('סכום לא תקין');return}
+    const c=parseMoney($('#eAmt').value);if(!c){toast('הסכום לא תקין');return}
     const d=$('#eDate').value;
     Object.assign(it,{c,k,p,d:DRE.test(d)?d:it.d,n:$('#eNote').value.trim()});
     if(sp==='me')delete it.sp;else it.sp=sp;
@@ -883,7 +902,7 @@ function openCash(){
       <input id="wFee" class="inp" inputmode="decimal" placeholder="עמלה ($)" style="flex:1">
     </div>
     <div class="row"><button class="btn" id="wGo">הוספה למזומן</button></div>
-    <p class="note" style="margin-top:6px">העמלה נרשמת כהוצאה «אחר» באשראי. בכספומט ובקופה בוחרים לחייב בדולרים ומסרבים להמרה שלהם (Decline conversion): היא יקרה יותר.</p>
+    <p class="note" style="margin-top:6px">העמלה נרשמת כהוצאה «אחר» באשראי. בכספומט ובקופה בוחרים לחייב בדולרים ומסרבים להמרה שלהם (Decline conversion), כי היא יקרה יותר.</p>
     <div class="sec">ספרתי את הכסף בארנק</div>
     <div class="row" style="margin-top:0">
       <input id="fAmt" class="inp" inputmode="decimal" placeholder="כמה יש לך בפועל ($)" style="flex:1">
@@ -903,10 +922,10 @@ function openCash(){
     const v=parseMoney($('#fAmt').value);
     if(v===null){toast('כמה יש לך בפועל? מספר בדולרים');return}
     const gap=v-cashLeft();
-    if(!gap){closeSheet();toast('מדויק. כל הכבוד.');return}
+    if(!gap){closeSheet();toast('הספירה תואמת, כל הכבוד');return}
     S.adds.push({id:uid(),c:gap,d:today(),ts:Date.now(),t:'fix'});
     save();closeSheet();renderAll();
-    toast(gap<0?'עודכן. מזומן שלא נרשם: '+fmt(-gap):'עודכן. נמצא עודף: '+fmt(gap));
+    toast(gap<0?'עודכן, מזומן שלא נרשם: '+fmt(-gap):'עודכן, נמצא עודף של '+fmt(gap));
   };
 }
 $('#pCash').addEventListener('click',()=>openCash());
@@ -920,7 +939,7 @@ function openSettings(){
     <label class="field"><span>תאריך סיום הטיול</span><input type="date" id="sEnd" class="inp" value="${esc(S.endDate)}"></label>
     <div class="row"><button class="btn" id="sSave">שמירה</button></div>
     <div class="sec">גיבוי</div>
-    <p class="note" style="margin-bottom:10px">הנתונים שמורים רק בטלפון הזה. «שליחת גיבוי» פותח שיתוף: בוחרים וואטסאפ ושולחים לצ'אט של עצמך. לשחזור מעתיקים את ההודעה ומדביקים כאן.</p>
+    <p class="note" style="margin-bottom:10px">הנתונים שמורים רק בטלפון הזה. «שליחת גיבוי» פותח שיתוף: בוחרים וואטסאפ ושולחים לעצמך. לשחזור מעתיקים את ההודעה ומדביקים כאן.</p>
     <div class="row"><button class="btn ghost" id="sBk">שליחת גיבוי</button><button class="btn ghost" id="sRestore">שחזור</button></div>
     <div class="row"><button class="btn ghost" id="sCsv">ייצוא לאקסל</button></div>
     <div class="sec">תזכורת ערב</div>
@@ -969,15 +988,15 @@ function backupText(){
   const d={v:1,s:S.startCash,e:S.endDate,
     i:S.items.map(i=>[i.id,i.c,i.k,i.p,i.d,i.ts,i.n||'',i.sp||'',i.ct||'']),
     a:S.adds.map(a=>[a.id,a.c,a.d,a.ts,a.t||'atm']),
-    x:S.settles.map(x=>[x.id,x.c,x.d,x.ts,x.dir,x.p]),b:S.buddy,g:S.budget,r:S.rate,z:S.zeroDays,ci:S.city,cl:S.cities};
-  return `גיבוי «כסף בטיול» ${dm(today())}, ${S.items.length} הוצאות. לשחזור: הגדרות ⟵ שחזור, ולהדביק את כל ההודעה.\n`+JSON.stringify(d);
+    x:S.settles.map(x=>[x.id,x.c,x.d,x.ts,x.dir,x.p]),b:S.buddy,g:S.budget,r:S.rate,z:S.zeroDays,ci:S.city,cl:S.cities,so:S.sumOff};
+  return `גיבוי «כסף בטיול» ${dm(today())}: ${S.items.length} הוצאות. לשחזור: הגדרות, שחזור, ולהדביק את כל ההודעה.\n`+JSON.stringify(d);
 }
 function fromJson(d){
   if(!d||d.v!==1)return null;
   if(Array.isArray(d.items))return normState(d);
   if(!Array.isArray(d.i))return null;
   const arr=x=>Array.isArray(x)?x:[];
-  return normState({startCash:d.s,endDate:d.e,buddy:d.b,budget:d.g,rate:d.r,zeroDays:d.z,city:d.ci,cities:d.cl,
+  return normState({startCash:d.s,endDate:d.e,buddy:d.b,budget:d.g,rate:d.r,zeroDays:d.z,city:d.ci,cities:d.cl,sumOff:d.so,
     items:d.i.map(r=>{const [id,c,k,p,dd,ts,n,sp,ct]=arr(r);return {id,c,k,p,d:dd,ts,n,sp,ct}}),
     adds:arr(d.a).map(r=>{const [id,c,dd,ts,t]=arr(r);return {id,c,d:dd,ts,t}}),
     settles:arr(d.x).map(r=>{const [id,c,dd,ts,dir,p]=arr(r);return {id,c,d:dd,ts,dir,p}})});
@@ -997,7 +1016,7 @@ async function backup(){
     try{await navigator.share({text});ok=true}catch(e){if(e.name==='AbortError')return}
   }
   if(!ok&&navigator.clipboard){
-    try{await navigator.clipboard.writeText(text);ok=true;toast('הגיבוי הועתק. מדביקים בצ\'אט שלך בוואטסאפ.')}catch(e){}
+    try{await navigator.clipboard.writeText(text);ok=true;toast('הגיבוי הועתק. מדביקים בוואטסאפ, בצ\'אט עם עצמך.')}catch(e){}
   }
   if(!ok)location.href=(isIOS?'whatsapp://send?text=':'https://wa.me/?text=')+encodeURIComponent(text);
   S.lastBackup=Date.now();save();renderSum();renderBanner();
@@ -1011,7 +1030,7 @@ function openRestore(fromOnboard){
   if(fromOnboard)$('#rBack').onclick=onboard;
   $('#rGo').onclick=()=>{
     let d;try{d=parseBackup($('#rTxt').value)}catch(e){toast('זה לא נראה כמו הודעת גיבוי מלאה');return}
-    const lost=d.dropped?` (${d.dropped} שורות פגומות ידלגו)`:'';
+    const lost=d.dropped?` (${d.dropped} שורות פגומות לא ייכנסו)`:'';
     if(S.items.length&&!confirm(`להחליף את מה שיש עכשיו (${S.items.length} הוצאות) ב-${d.items.length} הוצאות מהגיבוי${lost}?`))return;
     const prev=JSON.stringify(S);
     try{localStorage.setItem(KEY+'.prev',prev)}catch(e){}
