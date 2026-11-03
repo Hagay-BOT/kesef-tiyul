@@ -87,9 +87,12 @@ nav.tabs button.on{color:var(--accent);font-weight:600}
 .pay button.on[data-p=cash]{background:var(--cash);color:var(--on-pay)}
 .pay button.on[data-p=card]{background:var(--card);color:var(--on-pay)}
 .quick{display:flex;gap:6px;align-items:center;justify-content:center;overflow:hidden;white-space:nowrap}
-.chip{flex:none;min-height:34px;padding:0 12px;border-radius:12px;background:var(--surface2);font-size:14px;color:var(--muted);max-width:45%;overflow:hidden;text-overflow:ellipsis}
+.chip{flex:none;display:inline-flex;align-items:center;justify-content:center;gap:4px;height:36px;line-height:1;padding:0 12px;border-radius:12px;background:var(--surface2);font-size:14px;color:var(--muted);max-width:45%;overflow:hidden;white-space:nowrap}
+/* האימוג'י באייפון מגביה את השורה: כל הכפתורים בשורה ממורכזים לגובה אחיד */
+#recent:empty{display:none}
+#recent button,#tips button{display:inline-flex;align-items:center;justify-content:center;gap:4px;height:36px;line-height:1}
 .chip.on{color:var(--ink);font-weight:600}
-#recent{display:flex;flex-wrap:wrap;gap:6px;height:34px;overflow:hidden;flex:0 1 auto;min-width:0} /* צ'יפ שלא נכנס יורד שורה ונעלם, לא נחתך */
+#recent{display:flex;flex-wrap:wrap;gap:6px;height:36px;overflow:hidden;flex:0 1 auto;min-width:0} /* צ'יפ שלא נכנס יורד שורה ונעלם, לא נחתך */
 #recent button{flex:none;min-height:34px;padding:0 10px;border-radius:12px;border:1px dashed var(--muted);font-size:14px;background:var(--surface)}
 #recent button.hit{background:var(--accent-soft)}
 .inp{width:100%;padding:11px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface);outline:none}
