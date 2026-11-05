@@ -167,6 +167,10 @@ h2{font-size:22px;margin:4px 0 12px}
 .it.fix .a{color:var(--warn)}
 .it.settle .a{color:var(--card)}
 .it .t small.share{display:block;font-size:12px}
+.it .t small.meta{display:block;font-size:12px}
+.chip.cam{padding:0 11px}
+.ph{display:block;max-width:100%;max-height:46vh;margin:0 auto 10px;border-radius:14px;object-fit:contain}
+.phThumb{display:block;width:120px;height:120px;object-fit:cover;border-radius:12px;margin:0 auto 8px;cursor:pointer}
 .chip.split.on{background:var(--accent);color:var(--on-accent)}
 .seg.dim{opacity:.4}
 .opts{display:flex;flex-direction:column;gap:6px}
@@ -241,7 +245,7 @@ details.note ol{text-align:right}
         <label class="past" id="pickBtn" data-d="pick"><span id="pickLbl">📅</span><input type="date" id="dateIn" aria-label="תאריך אחר"></label>
       </div>
     </div>
-    <div class="quick"><button class="chip" id="noteBtn">+ הערה</button><button class="chip split" id="splitBtn">👥 חלוקה</button><span id="recent"></span><span id="tips" hidden></span></div>
+    <div class="quick"><button class="chip" id="noteBtn">+ הערה</button><button class="chip split" id="splitBtn">👥 חלוקה</button><button class="chip cam" id="camBtn" aria-label="תמונה">📷</button><span id="recent"></span><span id="tips" hidden></span></div>
     <div id="noteRow" hidden><input id="noteIn" class="inp" maxlength="60" placeholder="למשל: פיצה בברוקלין" enterkeyhint="done"></div>
     <p class="hint" id="hint" hidden></p>
     <div class="cats" id="cats"></div>
@@ -305,6 +309,7 @@ details.note ol{text-align:right}
 </div>
 
 <div class="sheet" id="sheet"><div class="sheet-box" id="sheetBox"></div></div>
+<input type="file" id="photoIn" accept="image/*" hidden>
 <div class="toast" id="toast"><span id="toastMsg"></span><button id="toastUndo" hidden>ביטול</button></div>
 
 <div id="gate" hidden>
@@ -392,6 +397,8 @@ function normItem(x){
   if(!x||!IDRE.test(x.id)||!Number.isInteger(x.c)||x.c<=0||!DRE.test(x.d))return null;
   const it={id:x.id,c:x.c,k:CAT[x.k]?x.k:'other',p:x.p==='card'?'card':'cash',d:x.d,ts:Number.isFinite(x.ts)?x.ts:0,n:typeof x.n==='string'?x.n.slice(0,60):''};
   if(SPLITS[x.sp]&&x.sp!=='me')it.sp=x.sp;
+  if(/^\d\d:\d\d$/.test(x.tm))it.tm=x.tm;
+  if(x.ph)it.ph=1;
   if(typeof x.ct==='string'&&x.ct.trim())it.ct=x.ct.trim().slice(0,40);
   return it;
 }
@@ -557,8 +564,9 @@ function addExpense(c,k,p,n,el,sp){
   const split={half:', חצי',halfB:', חצי',forB:', '+tB('בשביל {B}')}[it.sp]||'';
   const lt=leftToday(),bud=lt!==null&&it.d===today()&&k!=='stay'?` ${lt>=0?'נשאר להיום':'חריגה היום'} ${fmt(Math.abs(lt))}.`:'';
   toast(`נשמר: ${fmt(c)} ${CAT[k].n}, ${how}${split}${when}.${bud}`,()=>{
-    S.items=S.items.filter(x=>x.id!==it.id);save();renderAll();toast('בוטל');
+    S.items=S.items.filter(x=>x.id!==it.id);save();renderAll();toast('בוטל');PDB.del(it.id).catch(()=>{});
   });
+  return it;
 }
 $('#cats').addEventListener('click',e=>{
   const b=e.target.closest('.cat');if(!b)return;
@@ -571,7 +579,9 @@ $('#cats').addEventListener('click',e=>{
   if(tipPct)n=(n?n+', ':'')+'כולל טיפ '+tipPct+'%';
   tipBase=null;tipPct=0;
   amt='';$('#noteIn').value='';$('#noteRow').hidden=true;renderNote();
-  addExpense(c,b.dataset.k,S.pay,n,b,S.split);
+  const it=addExpense(c,b.dataset.k,S.pay,n,b,S.split);
+  // התמונה עדיין יכולה להיות בהקטנה: מחכים לה, והיא נצמדת להוצאה הזאת ולא לבאה
+  if(pendingPhoto){const pp=pendingPhoto;pendingPhoto=null;renderCam();pp.then(blob=>PDB.put(it.id,blob)).then(()=>{if(S.items.includes(it)){it.ph=1;save();renderList()}else PDB.del(it.id)}).catch(()=>toast('התמונה לא נשמרה'))}
   maybeReload();
 });
 
@@ -663,6 +673,79 @@ function renderCities(items){
   const rows=[...m.entries()].sort((a,b)=>b[1].t-a[1].t);
   $('#cityCard').hidden=!rows.length;
   $('#cityRows').innerHTML=rows.map(([c,r])=>`<div class="cr"><span>${esc(c)}</span><b class="num">${fmt(r.t)}</b><small>${daysTxt(r.days.size)}, בממוצע <span class="num">${fmt(Math.round(r.t/r.days.size/100)*100)}</span> ליום</small></div>`).join('');
+}
+
+/* ---------- שעה ותמונות ---------- */
+const hm=ts=>{if(!ts)return '';const d=new Date(ts);return p2(d.getHours())+':'+p2(d.getMinutes())};
+// שעה שהוקלדה בעריכה = שעת העסקה. אחרת שעת הרישום, ואם נרשם ביום אחר אומרים מתי
+function whenTxt(i){
+  if(i.tm)return i.tm;
+  if(!i.ts)return '';
+  const d=new Date(i.ts),day=ymd(d);
+  return day===i.d?hm(i.ts):'נרשם ב-'+dm(day)+' '+hm(i.ts);
+}
+// התמונות ב-IndexedDB ולא ב-localStorage: שם יש מקום, וה-JSON נשאר קטן לגיבוי
+const PDB=(()=>{
+  let dbp;
+  const open=()=>dbp||(dbp=new Promise((res,rej)=>{const r=indexedDB.open('kesef-photos',1);r.onupgradeneeded=()=>r.result.createObjectStore('p');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}));
+  const run=(mode,fn)=>open().then(db=>new Promise((res,rej)=>{const t=db.transaction('p',mode),r=fn(t.objectStore('p'));t.oncomplete=()=>res(r&&r.result);t.onerror=()=>rej(t.error)}));
+  return {put:(k,b)=>run('readwrite',s=>s.put(b,k)),get:k=>run('readonly',s=>s.get(k)),del:k=>run('readwrite',s=>s.delete(k)),keys:()=>run('readonly',s=>s.getAllKeys())};
+})();
+// מקטינים ל-1280 פיקסלים: תמונה של כ-200KB במקום 3MB
+async function shrink(file){
+  const url=URL.createObjectURL(file);
+  try{
+    const img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=url});
+    const sc=Math.min(1,1280/Math.max(img.naturalWidth,img.naturalHeight));
+    const c=document.createElement('canvas');c.width=Math.round(img.naturalWidth*sc);c.height=Math.round(img.naturalHeight*sc);
+    c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+    return await new Promise((res,rej)=>c.toBlob(b=>b?res(b):rej(),'image/jpeg',0.72));
+  }finally{URL.revokeObjectURL(url)}
+}
+let pendingPhoto=null,photoTarget=null;
+function renderCam(){const b=$('#camBtn');b.classList.toggle('on',!!pendingPhoto);b.textContent=pendingPhoto?'📷 ✓':'📷'}
+function pickPhoto(target){photoTarget=target;$('#photoIn').value='';$('#photoIn').click()}
+$('#camBtn').addEventListener('click',()=>{
+  if(pendingPhoto){pendingPhoto=null;renderCam();toast('התמונה הוסרה');return}
+  pickPhoto(null);
+});
+$('#photoIn').addEventListener('change',async e=>{
+  const f=e.target.files&&e.target.files[0];if(!f)return;
+  if(!photoTarget){
+    const pp=shrink(f);pendingPhoto=pp;renderCam();toast('📷 התמונה תצורף להוצאה הבאה');
+    pp.catch(()=>{if(pendingPhoto===pp){pendingPhoto=null;renderCam()}toast('לא הצלחנו לקרוא את התמונה')});
+    return;
+  }
+  let blob;try{blob=await shrink(f)}catch(err){toast('לא הצלחנו לקרוא את התמונה');return}
+  const it=S.items.find(x=>x.id===photoTarget);if(!it)return;
+  try{await PDB.put(it.id,blob);it.ph=1;save();renderList();renderEditPhoto(it);toast('התמונה נשמרה')}catch(err){toast('התמונה לא נשמרה')}
+});
+let photoUrl=null;
+async function renderEditPhoto(it){
+  const box=$('#ePhoto');if(!box)return;
+  if(photoUrl){URL.revokeObjectURL(photoUrl);photoUrl=null}
+  const blob=it.ph?await PDB.get(it.id).catch(()=>null):null;
+  if(!blob){
+    box.innerHTML=(it.ph?'<p class="note" style="margin-bottom:6px">התמונה לא נמצאת בטלפון הזה.</p>':'')+'<button class="btn ghost" id="ePhAdd" style="width:100%">📷 הוספת תמונה</button>';
+    $('#ePhAdd').onclick=()=>pickPhoto(it.id);return;
+  }
+  photoUrl=URL.createObjectURL(blob);
+  box.innerHTML=`<img class="phThumb" id="ePhImg" src="${photoUrl}" alt="תמונת ההוצאה"><div class="row" style="margin-top:0"><button class="btn ghost" id="ePhRep">החלפה</button><button class="btn ghost" id="ePhDel">הסרת התמונה</button></div>`;
+  $('#ePhImg').onclick=()=>openPhoto(it,blob);
+  $('#ePhRep').onclick=()=>pickPhoto(it.id);
+  $('#ePhDel').onclick=async()=>{await PDB.del(it.id).catch(()=>{});delete it.ph;save();renderList();renderEditPhoto(it);toast('התמונה הוסרה')};
+}
+function openPhoto(it,blob){
+  const url=URL.createObjectURL(blob);
+  sheet(`<h3>${CAT[it.k].e} ${CAT[it.k].n} <span class="num">${fmt(it.c)}</span></h3>
+    <img class="ph" src="${url}" alt="תמונת ההוצאה">
+    <div class="row"><button class="btn ghost" id="phSave">שמירה בתמונות</button><button class="btn ghost" id="phBack">חזרה להוצאה</button></div>`);
+  $('#phBack').onclick=()=>{URL.revokeObjectURL(url);openEdit(it.id)};
+  $('#phSave').onclick=async()=>{
+    const file=new File([blob],'kesef-'+it.d+'.jpg',{type:'image/jpeg'});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({files:[file]})}catch(e){}}
+    else{const a=document.createElement('a');a.href=url;a.download=file.name;a.click()}
+  };
 }
 
 /* ---------- backup nudge ---------- */
@@ -815,7 +898,7 @@ function renderList(){
       ?(isFix(i)
         ?`<button class="it fix" data-add="${esc(i.id)}"><span class="e">🧮</span><span class="t"><div>תיקון לפי ספירה</div></span><span class="a num">${i.c>0?'+':''}${fmt(i.c)}</span></button>`
         :`<button class="it add" data-add="${esc(i.id)}"><span class="e">🏧</span><span class="t"><div>משיכת מזומן</div></span><span class="a num">+${fmt(i.c)}</span></button>`)
-      :`<button class="it" data-id="${esc(i.id)}"><span class="e">${CAT[i.k].e}</span><span class="t"><div>${CAT[i.k].n}${i.n?` <small>${esc(i.n)}</small>`:''}</div>${i.sp?`<small class="share">👥 ${esc(tB(SPLITS[i.sp].chip))}, החלק שלך <span class="num">${fmt(mine(i))}</span></small>`:''}</span><small>${byMe(i)?(i.p==='cash'?'💵':'💳'):'👥'}</small><span class="a num">${fmt(i.c)}</span></button>`
+      :`<button class="it" data-id="${esc(i.id)}"><span class="e">${CAT[i.k].e}</span><span class="t"><div>${CAT[i.k].n}${i.n?` <small>${esc(i.n)}</small>`:''}</div>${i.sp?`<small class="share">👥 ${esc(tB(SPLITS[i.sp].chip))}, החלק שלך <span class="num">${fmt(mine(i))}</span></small>`:''}<small class="meta">${esc(whenTxt(i))}${i.ph?' 📷':''}</small></span><small>${byMe(i)?(i.p==='cash'?'💵':'💳'):'👥'}</small><span class="a num">${fmt(i.c)}</span></button>`
     ).join('')+'</div></div>';
   }).join('');
 }
@@ -875,9 +958,12 @@ function openEdit(id){
     <div class="seg pay" id="ePay" style="margin-bottom:12px"><button data-p="cash" class="${p==='cash'?'on':''}">💵 מזומן</button><button data-p="card" class="${p==='card'?'on':''}">💳 אשראי</button></div>
     ${S.buddy||it.sp?`<div class="chips" id="eSp">${Object.entries(SPLITS).map(([key,v])=>`<button data-sp="${key}" class="${key===sp?'on':''}">${esc(tB(v.label))}</button>`).join('')}</div>`:''}
     <label class="field"><span>תאריך</span><input type="date" id="eDate" class="inp" max="${today()}" value="${esc(it.d)}"></label>
+    <label class="field"><span>שעה</span><input type="time" id="eTime" class="inp" value="${esc(it.tm||hm(it.ts))}"></label>
     <label class="field"><span>הערה</span><input id="eNote" class="inp" maxlength="60" value="${esc(it.n)}"></label>
+    <div id="ePhoto" style="text-align:center;margin-bottom:12px"></div>
     <label class="field"><span>עיר</span><input id="eCity" class="inp" maxlength="40" list="cityList" value="${esc(it.ct||'')}"><datalist id="cityList">${S.cities.map(c=>`<option value="${esc(c)}">`).join('')}</datalist></label>
     <div class="row"><button class="btn" id="eSave">שמירה</button><button class="btn danger" id="eDel">מחיקה</button></div>`);
+  renderEditPhoto(it);
   $('#eCat').onclick=e=>{const b=e.target.closest('button');if(!b)return;k=b.dataset.k;$('#eCat').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b))};
   $('#ePay').onclick=e=>{const b=e.target.closest('button');if(!b)return;p=b.dataset.p;$('#ePay').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b))};
   if($('#eSp'))$('#eSp').onclick=e=>{const b=e.target.closest('button');if(!b)return;sp=b.dataset.sp;$('#eSp').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b))};
@@ -887,6 +973,7 @@ function openEdit(id){
     Object.assign(it,{c,k,p,d:DRE.test(d)?d:it.d,n:$('#eNote').value.trim()});
     if(sp==='me')delete it.sp;else it.sp=sp;
     const ct=$('#eCity').value.trim().slice(0,40);if(ct)it.ct=ct;else delete it.ct;
+    const tm=$('#eTime').value;if(/^\d\d:\d\d$/.test(tm)&&(it.tm||tm!==hm(it.ts)))it.tm=tm;
     save();closeSheet();renderAll();toast('עודכן');
   };
   $('#eDel').onclick=()=>{
@@ -942,7 +1029,7 @@ function openSettings(){
     <label class="field"><span>תאריך סיום הטיול</span><input type="date" id="sEnd" class="inp" value="${esc(S.endDate)}"></label>
     <div class="row"><button class="btn" id="sSave">שמירה</button></div>
     <div class="sec">גיבוי</div>
-    <p class="note" style="margin-bottom:10px">הנתונים שמורים רק בטלפון הזה. «שליחת גיבוי» פותח שיתוף: בוחרים וואטסאפ ושולחים לעצמך. לשחזור מעתיקים את ההודעה ומדביקים כאן.</p>
+    <p class="note" style="margin-bottom:10px">הנתונים שמורים רק בטלפון הזה. «שליחת גיבוי» פותח שיתוף: בוחרים וואטסאפ ושולחים לעצמך. לשחזור מעתיקים את ההודעה ומדביקים כאן. התמונות נשמרות רק בטלפון ולא נכנסות לגיבוי.</p>
     <div class="row"><button class="btn ghost" id="sBk">שליחת גיבוי</button><button class="btn ghost" id="sRestore">שחזור</button></div>
     <div class="row"><button class="btn ghost" id="sCsv">ייצוא לאקסל</button></div>
     <div class="sec">תזכורת ערב</div>
@@ -989,7 +1076,7 @@ function onboard(){
 /* ---------- backup (טקסט לוואטסאפ) / restore / export ---------- */
 function backupText(){
   const d={v:1,s:S.startCash,e:S.endDate,
-    i:S.items.map(i=>[i.id,i.c,i.k,i.p,i.d,i.ts,i.n||'',i.sp||'',i.ct||'']),
+    i:S.items.map(i=>[i.id,i.c,i.k,i.p,i.d,i.ts,i.n||'',i.sp||'',i.ct||'',i.tm||'',i.ph?1:0]),
     a:S.adds.map(a=>[a.id,a.c,a.d,a.ts,a.t||'atm']),
     x:S.settles.map(x=>[x.id,x.c,x.d,x.ts,x.dir,x.p]),b:S.buddy,g:S.budget,r:S.rate,z:S.zeroDays,ci:S.city,cl:S.cities,so:S.sumOff};
   return `גיבוי «כסף בטיול» ${dm(today())}: ${S.items.length} הוצאות. לשחזור: הגדרות, שחזור, ולהדביק את כל ההודעה.\n`+JSON.stringify(d);
@@ -1000,7 +1087,7 @@ function fromJson(d){
   if(!Array.isArray(d.i))return null;
   const arr=x=>Array.isArray(x)?x:[];
   return normState({startCash:d.s,endDate:d.e,buddy:d.b,budget:d.g,rate:d.r,zeroDays:d.z,city:d.ci,cities:d.cl,sumOff:d.so,
-    items:d.i.map(r=>{const [id,c,k,p,dd,ts,n,sp,ct]=arr(r);return {id,c,k,p,d:dd,ts,n,sp,ct}}),
+    items:d.i.map(r=>{const [id,c,k,p,dd,ts,n,sp,ct,tm,ph]=arr(r);return {id,c,k,p,d:dd,ts,n,sp,ct,tm,ph}}),
     adds:arr(d.a).map(r=>{const [id,c,dd,ts,t]=arr(r);return {id,c,d:dd,ts,t}}),
     settles:arr(d.x).map(r=>{const [id,c,dd,ts,dir,p]=arr(r);return {id,c,d:dd,ts,dir,p}})});
 }
@@ -1045,10 +1132,10 @@ function openRestore(fromOnboard){
 }
 async function exportCsv(){
   const q=s=>'"'+String(s).replace(/"/g,'""')+'"';
-  const lines=[['תאריך','קטגוריה','הוצאה $','החלק שלי $','תשלום','חלוקה','הערה','מזומן נכנס $','עיר'].map(q).join(',')];
-  [...S.items].sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:a.ts-b.ts).forEach(i=>lines.push([i.d,CAT[i.k].n,(i.c/100).toFixed(2),i.p==='cash'?'מזומן':'אשראי',i.n||'','',i.ct||''].map(q).join(',')));
-  S.adds.forEach(a=>lines.push([a.d,isFix(a)?'תיקון לפי ספירה':'משיכת מזומן','','','מזומן','','',(a.c/100).toFixed(2)].map(q).join(',')));
-  S.settles.forEach(x=>lines.push([x.d,'התחשבנות עם '+S.buddy,'','',x.p==='cash'?'מזומן':'העברה',x.dir==='in'?'החזיר לי':'החזרתי','',x.p==='cash'?((x.dir==='in'?x.c:-x.c)/100).toFixed(2):''].map(q).join(',')));
+  const lines=[['תאריך','שעה','קטגוריה','הוצאה $','החלק שלי $','תשלום','חלוקה','הערה','מזומן נכנס $','עיר'].map(q).join(',')];
+  [...S.items].sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:a.ts-b.ts).forEach(i=>lines.push([i.d,i.tm||hm(i.ts),CAT[i.k].n,(i.c/100).toFixed(2),(mine(i)/100).toFixed(2),byMe(i)?(i.p==='cash'?'מזומן':'אשראי'):tB('{B} שילם'),i.sp?tB(SPLITS[i.sp].label):'',i.n||'','',i.ct||''].map(q).join(',')));
+  S.adds.forEach(a=>lines.push([a.d,hm(a.ts),isFix(a)?'תיקון לפי ספירה':'משיכת מזומן','','','מזומן','','',(a.c/100).toFixed(2),''].map(q).join(',')));
+  S.settles.forEach(x=>lines.push([x.d,hm(x.ts),'התחשבנות עם '+S.buddy,'','',x.p==='cash'?'מזומן':'העברה',x.dir==='in'?'החזיר לי':'החזרתי','',x.p==='cash'?((x.dir==='in'?x.c:-x.c)/100).toFixed(2):'',''].map(q).join(',')));
   const name='kesef-tiyul-'+today()+'.csv';
   const file=new File(['﻿'+lines.join('\r\n')],name,{type:'text/csv'});
   if(navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({files:[file]});return}catch(e){if(e.name==='AbortError')return}}
@@ -1118,6 +1205,7 @@ const standalone=navigator.standalone===true||matchMedia('(display-mode: standal
 if(isIOS&&!standalone)$('#gate').hidden=false;
 else if(S.startCash===null)onboard();
 if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
+setTimeout(()=>PDB.keys().then(ks=>{const ids=new Set(S.items.map(i=>i.id));ks.filter(k=>!ids.has(k)).forEach(k=>PDB.del(k))}).catch(()=>{}),15000);
 </script>
 </body>
 </html>
