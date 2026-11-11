@@ -1165,7 +1165,7 @@ function reviewImport(rows){
         <div class="sb"><span>${dm(r.d)}</span>
           <button data-a="cat">${CAT[r.k].e} ${CAT[r.k].n}</button>
           ${S.buddy?`<button class="sp ${r.sp!=='me'?'on':''}" data-a="sp">👥 ${r.sp==='me'?'שלי':esc(tB(SPLITS[r.sp].chip))}</button>`:''}
-          ${r.hit?`<span>כבר רשום: ${CAT[r.hit.k].n} ${dm(r.hit.d)}</span>`:''}${r.x?`<span>${esc(r.x)}</span>`:''}</div>
+          ${r.hit?`<span>כבר רשום אצלך: ${fmt(r.hit.c)} ${CAT[r.hit.k].n}${r.hit.n?' ('+esc(r.hit.n)+')':''}, ${r.hit.p==='cash'?'במזומן':'באשראי'}, ${dm(r.hit.d)}</span>`:''}${r.x?`<span>${esc(r.x)}</span>`:''}</div>
       </div>`).join('')}</div>
       <div class="row" style="position:sticky;bottom:0;background:var(--bg);padding-top:8px"><button class="btn" id="impAdd">הוספת ${n} הוצאות (${fmt(tot)})</button></div>`);
     $('#impList').onclick=e=>{

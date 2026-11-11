@@ -1,5 +1,5 @@
 // REV: לשנות בכל פריסה של sw.js. הדף עצמו מתעדכן גם בלי זה (רענון ברקע)
-const REV='10';
+const REV='11';
 const CACHE='kesef-'+REV;
 const ASSETS=['./','./index.html','./manifest.webmanifest','./icons/icon-180.png','./icons/icon-192.png','./icons/icon-512.png'];
 
