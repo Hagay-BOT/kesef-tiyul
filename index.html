@@ -168,6 +168,14 @@ h2{font-size:22px;margin:4px 0 12px}
 .it.settle .a{color:var(--card)}
 .it .t small.share{display:block;font-size:12px}
 .it .t small.meta{display:block;font-size:12px}
+.imp{display:grid;grid-template-columns:auto 1fr auto;gap:4px 10px;align-items:center;padding:10px 4px;border-bottom:1px solid var(--line);text-align:right}
+.imp.off{opacity:.45}
+.imp .ck{width:26px;height:26px;border-radius:8px;border:2px solid var(--muted);display:grid;place-items:center;font-size:15px}
+.imp.on .ck{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.imp .nm{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.imp .sb{grid-column:2/-1;display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--muted)}
+.imp .sb button{min-height:30px;padding:0 9px;border-radius:9px;background:var(--surface2);font-size:13px;color:var(--ink)}
+.imp .sb button.sp.on{background:var(--accent);color:var(--on-accent)}
 .chip.cam{padding:0 11px}
 .ph{display:block;max-width:100%;max-height:46vh;margin:0 auto 10px;border-radius:14px;object-fit:contain}
 .phThumb{display:block;width:120px;height:120px;object-fit:cover;border-radius:12px;margin:0 auto 8px;cursor:pointer}
@@ -1031,7 +1039,7 @@ function openSettings(){
     <div class="sec">גיבוי</div>
     <p class="note" style="margin-bottom:10px">הנתונים שמורים רק בטלפון הזה. «שליחת גיבוי» פותח שיתוף: בוחרים וואטסאפ ושולחים לעצמך. לשחזור מעתיקים את ההודעה ומדביקים כאן. התמונות נשמרות רק בטלפון ולא נכנסות לגיבוי.</p>
     <div class="row"><button class="btn ghost" id="sBk">שליחת גיבוי</button><button class="btn ghost" id="sRestore">שחזור</button></div>
-    <div class="row"><button class="btn ghost" id="sCsv">ייצוא לאקסל</button></div>
+    <div class="row"><button class="btn ghost" id="sCsv">ייצוא לאקסל</button><button class="btn ghost" id="sImp">ייבוא עסקאות אשראי</button></div>
     <div class="sec">תזכורת ערב</div>
     <details class="note"><summary>תזכורת כל ערב ב-21:00, בלי אינטרנט</summary>
       <ol>
@@ -1044,6 +1052,7 @@ function openSettings(){
   $('#sBk').onclick=backup;
   $('#sRestore').onclick=()=>openRestore(false);
   $('#sCsv').onclick=exportCsv;
+  $('#sImp').onclick=openImport;
   $('#sSave').onclick=()=>{
     const v=$('#sStart').value.trim();
     const c=v===''?null:parseMoney(v);
@@ -1112,6 +1121,71 @@ async function backup(){
   S.lastBackup=Date.now();save();renderSum();renderBanner();
 }
 $('#bkBtn').addEventListener('click',backup);
+/* ייבוא עסקאות אשראי: שורות «תאריך|סכום|בית עסק|קטגוריה|הערה». מה שכבר רשום (אותו סכום, יום לכל היותר) מסומן ולא נכנס */
+function parseImport(txt){
+  const rows=[];
+  String(txt||'').split(/\r?\n/).forEach(l=>{
+    const f=l.split('|').map(x=>x.trim());
+    if(f.length<3||!DRE.test(f[0]))return;
+    const c=parseMoney(f[1]);if(!c)return;
+    rows.push({d:f[0],c,m:f[2].slice(0,40),k:CAT[f[3]]?f[3]:'other',x:(f[4]||'').slice(0,40)});
+  });
+  return rows;
+}
+function matchImport(rows){
+  const used=new Set();
+  rows.forEach(r=>{
+    const hit=S.items.find(i=>!used.has(i.id)&&i.c===r.c&&Math.abs(diff(i.d,r.d))<=1);
+    if(hit){used.add(hit.id);r.hit=hit}
+    r.on=!hit&&!r.x.includes('לבדוק');r.sp='me';
+  });
+  return rows;
+}
+const SP_CYCLE=['me','half','forB'];
+function openImport(){
+  sheet(`<h3>ייבוא עסקאות אשראי</h3>
+    <p class="note" style="margin-bottom:10px">מדביקים את הרשימה שקיבלת. מה שכבר רשום באפליקציה יסומן ולא ייכנס פעמיים.</p>
+    <textarea id="impTxt" class="inp" placeholder="להדביק כאן"></textarea>
+    <div class="row"><button class="btn" id="impGo">המשך</button></div>`);
+  $('#impGo').onclick=()=>{
+    const rows=matchImport(parseImport($('#impTxt').value));
+    if(!rows.length){toast('לא נמצאו עסקאות בטקסט');return}
+    reviewImport(rows);
+  };
+}
+function reviewImport(rows){
+  const draw=()=>{
+    const n=rows.filter(r=>r.on).length,tot=rows.filter(r=>r.on).reduce((t,r)=>t+r.c,0);
+    sheet(`<h3>${rows.length} עסקאות, ${rows.filter(r=>r.hit).length} כבר רשומות</h3>
+      <p class="note" style="margin-bottom:8px">נגיעה בריבוע מסמנת מה להוסיף. 👥 מחליף בין «שלי», «חצי עם ${esc(S.buddy||'החבר')}» ו«בשביל ${esc(S.buddy||'החבר')}». נגיעה בקטגוריה מחליפה אותה.</p>
+      <div id="impList">${rows.map((r,ix)=>`<div class="imp ${r.on?'on':'off'}" data-ix="${ix}">
+        <button class="ck" data-a="ck">${r.on?'✓':''}</button>
+        <div class="nm">${esc(r.m)}</div>
+        <b class="num">${fmt(r.c)}</b>
+        <div class="sb"><span>${dm(r.d)}</span>
+          <button data-a="cat">${CAT[r.k].e} ${CAT[r.k].n}</button>
+          ${S.buddy?`<button class="sp ${r.sp!=='me'?'on':''}" data-a="sp">👥 ${r.sp==='me'?'שלי':esc(tB(SPLITS[r.sp].chip))}</button>`:''}
+          ${r.hit?`<span>כבר רשום: ${CAT[r.hit.k].n} ${dm(r.hit.d)}</span>`:''}${r.x?`<span>${esc(r.x)}</span>`:''}</div>
+      </div>`).join('')}</div>
+      <div class="row" style="position:sticky;bottom:0;background:var(--bg);padding-top:8px"><button class="btn" id="impAdd">הוספת ${n} הוצאות (${fmt(tot)})</button></div>`);
+    $('#impList').onclick=e=>{
+      const b=e.target.closest('button'),row=e.target.closest('.imp');if(!b||!row)return;
+      const r=rows[+row.dataset.ix];
+      if(b.dataset.a==='ck')r.on=!r.on;
+      if(b.dataset.a==='cat'){const ks=CATS.map(c=>c.k);r.k=ks[(ks.indexOf(r.k)+1)%ks.length]}
+      if(b.dataset.a==='sp'){r.sp=SP_CYCLE[(SP_CYCLE.indexOf(r.sp)+1)%SP_CYCLE.length];r.on=true}
+      const top=$('#sheetBox').scrollTop;draw();$('#sheetBox').scrollTop=top;
+    };
+    $('#impAdd').onclick=()=>{
+      const add=rows.filter(r=>r.on).map((r,j)=>{const it={id:uid()+j,c:r.c,k:r.k,p:'card',d:r.d,ts:Date.now(),n:r.m+(r.x?', '+r.x:'')};if(r.sp!=='me')it.sp=r.sp;return it});
+      if(!add.length){toast('לא סומנה אף עסקה');return}
+      S.items.push(...add);save();closeSheet();renderAll();
+      toast(`נוספו ${add.length} הוצאות`,()=>{const ids=new Set(add.map(a=>a.id));S.items=S.items.filter(i=>!ids.has(i.id));save();renderAll();toast('בוטל')});
+    };
+  };
+  draw();
+}
+
 function openRestore(fromOnboard){
   sheet(`<h3>שחזור מגיבוי</h3>
     <p class="note" style="margin-bottom:10px">בוואטסאפ: לחיצה ארוכה על הודעת הגיבוי ⟵ העתקה. ואז מדביקים כאן.</p>
